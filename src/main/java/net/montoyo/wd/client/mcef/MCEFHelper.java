@@ -3,12 +3,11 @@ package net.montoyo.wd.client.mcef;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import net.montoyo.wd.utilities.Log;
 
-import java.awt.Canvas;
-import java.awt.Component;
-import java.awt.event.InputEvent;
-import java.awt.event.KeyEvent;
-import java.awt.event.MouseEvent;
-import java.awt.event.MouseWheelEvent;
+import net.minecraft.client.input.CharacterEvent;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.input.MouseButtonInfo;
+
 import java.lang.reflect.Method;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -33,8 +32,6 @@ public class MCEFHelper {
     private static volatile boolean initFailed = false;
 
     private static final ConcurrentHashMap<String, Method> methodCache = new ConcurrentHashMap<>();
-    /** Dummy AWT source component for synthesised events; JCEF's off-screen browser ignores it. */
-    private static final Component EVENT_SOURCE = new Canvas();
 
     public static boolean isMCEFAvailable() {
         if (!checked) {
@@ -173,106 +170,43 @@ public class MCEFHelper {
     }
 
     // === Synthesised input ===
-
-    private static void sendMouseEvent(Object browser, MouseEvent event) {
-        Object cef = cefBrowser(browser);
-        invokeVoid(cef, "sendMouseEvent", new Class[]{MouseEvent.class}, event);
-    }
+    //
+    // These go through MCEF Modern's own MCEFBrowser methods rather than JCEF's raw AWT
+    // events. MCEF translates GLFW codes and modifiers to AWT internally and tracks drag
+    // and enter/exit state as it does so; feeding CefBrowser AWT events directly bypasses
+    // all of that and the browser ignores them.
 
     public static void sendMouseClick(Object browser, int x, int y, int button, boolean release, int clickCount) {
-        int awtButton = switch (button) {
-            case 1 -> MouseEvent.BUTTON2; // middle
-            case 2 -> MouseEvent.BUTTON3; // right
-            default -> MouseEvent.BUTTON1;
-        };
-        sendMouseEvent(browser, new MouseEvent(EVENT_SOURCE,
-                release ? MouseEvent.MOUSE_RELEASED : MouseEvent.MOUSE_PRESSED,
-                System.currentTimeMillis(), 0, x, y, Math.max(1, clickCount), false, awtButton));
+        MouseButtonEvent event = new MouseButtonEvent(x, y, new MouseButtonInfo(button, 0));
+        if (release) {
+            invokeVoid(browser, "onMouseReleased", new Class[]{MouseButtonEvent.class}, event);
+        } else {
+            invokeVoid(browser, "onMouseClicked", new Class[]{MouseButtonEvent.class, boolean.class},
+                    event, clickCount > 1);
+        }
     }
 
     public static void sendMouseMove(Object browser, int x, int y, boolean leave) {
-        sendMouseEvent(browser, new MouseEvent(EVENT_SOURCE,
-                leave ? MouseEvent.MOUSE_EXITED : MouseEvent.MOUSE_MOVED,
-                System.currentTimeMillis(), 0, x, y, 0, false, MouseEvent.NOBUTTON));
+        invokeVoid(browser, "onMouseMoved", new Class[]{int.class, int.class}, x, y);
     }
 
     public static void sendMouseWheel(Object browser, int x, int y, double amount, int modifiers) {
-        Object cef = cefBrowser(browser);
-        MouseWheelEvent event = new MouseWheelEvent(EVENT_SOURCE, MouseWheelEvent.MOUSE_WHEEL,
-                System.currentTimeMillis(), modifiers, x, y, 0, false,
-                MouseWheelEvent.WHEEL_UNIT_SCROLL, 100, (int) Math.signum(amount));
-        invokeVoid(cef, "sendMouseWheelEvent", new Class[]{MouseWheelEvent.class}, event);
+        invokeVoid(browser, "onMouseScrolled", new Class[]{int.class, int.class, double.class}, x, y, amount);
     }
 
-    private static void sendKeyEvent(Object browser, KeyEvent event) {
-        Object cef = cefBrowser(browser);
-        invokeVoid(cef, "sendKeyEvent", new Class[]{KeyEvent.class}, event);
-    }
-
-    /** Sends a typed character (KEY_TYPED), which is what text fields consume. */
+    /** Sends a typed character, which is what text fields consume. */
     public static void sendKeyEvent(Object browser, char c) {
-        sendKeyEvent(browser, new KeyEvent(EVENT_SOURCE, KeyEvent.KEY_TYPED,
-                System.currentTimeMillis(), 0, KeyEvent.VK_UNDEFINED, c));
+        invokeVoid(browser, "onCharTyped", new Class[]{CharacterEvent.class}, new CharacterEvent(c));
     }
 
-    public static void sendKeyPress(Object browser, int glfwKeyCode, long scanCode, int glfwModifiers) {
-        int vk = glfwToAwtKeyCode(glfwKeyCode);
-        sendKeyEvent(browser, new KeyEvent(EVENT_SOURCE, KeyEvent.KEY_PRESSED,
-                System.currentTimeMillis(), glfwToAwtModifiers(glfwModifiers), vk, (char) vk));
+    public static void sendKeyPress(Object browser, int glfwKeyCode, long scanCode, int modifiers) {
+        invokeVoid(browser, "onKeyPressed", new Class[]{KeyEvent.class},
+                new KeyEvent(glfwKeyCode, (int) scanCode, modifiers));
     }
 
-    public static void sendKeyRelease(Object browser, int glfwKeyCode, long scanCode, int glfwModifiers) {
-        int vk = glfwToAwtKeyCode(glfwKeyCode);
-        sendKeyEvent(browser, new KeyEvent(EVENT_SOURCE, KeyEvent.KEY_RELEASED,
-                System.currentTimeMillis(), glfwToAwtModifiers(glfwModifiers), vk, (char) vk));
-    }
-
-    private static int glfwToAwtModifiers(int glfwModifiers) {
-        int awt = 0;
-        if ((glfwModifiers & 0x0001) != 0) awt |= InputEvent.SHIFT_DOWN_MASK;
-        if ((glfwModifiers & 0x0002) != 0) awt |= InputEvent.CTRL_DOWN_MASK;
-        if ((glfwModifiers & 0x0004) != 0) awt |= InputEvent.ALT_DOWN_MASK;
-        if ((glfwModifiers & 0x0008) != 0) awt |= InputEvent.META_DOWN_MASK;
-        return awt;
-    }
-
-    private static int glfwToAwtKeyCode(int keyCode) {
-        if (keyCode >= 65 && keyCode <= 90) return keyCode;   // A-Z
-        if (keyCode >= 48 && keyCode <= 57) return keyCode;   // 0-9
-        if (keyCode >= 290 && keyCode <= 301) return keyCode - 290 + KeyEvent.VK_F1;
-        return switch (keyCode) {
-            case 256 -> KeyEvent.VK_ESCAPE;
-            case 257 -> KeyEvent.VK_ENTER;
-            case 258 -> KeyEvent.VK_TAB;
-            case 259 -> KeyEvent.VK_BACK_SPACE;
-            case 260 -> KeyEvent.VK_INSERT;
-            case 261 -> KeyEvent.VK_DELETE;
-            case 262 -> KeyEvent.VK_RIGHT;
-            case 263 -> KeyEvent.VK_LEFT;
-            case 264 -> KeyEvent.VK_DOWN;
-            case 265 -> KeyEvent.VK_UP;
-            case 266 -> KeyEvent.VK_PAGE_UP;
-            case 267 -> KeyEvent.VK_PAGE_DOWN;
-            case 268 -> KeyEvent.VK_HOME;
-            case 269 -> KeyEvent.VK_END;
-            case 340 -> KeyEvent.VK_SHIFT;
-            case 341 -> KeyEvent.VK_CONTROL;
-            case 342 -> KeyEvent.VK_ALT;
-            case 344 -> KeyEvent.VK_CAPS_LOCK;
-            case 32 -> KeyEvent.VK_SPACE;
-            case 39 -> KeyEvent.VK_QUOTE;
-            case 44 -> KeyEvent.VK_COMMA;
-            case 45 -> KeyEvent.VK_MINUS;
-            case 46 -> KeyEvent.VK_PERIOD;
-            case 47 -> KeyEvent.VK_SLASH;
-            case 59 -> KeyEvent.VK_SEMICOLON;
-            case 61 -> KeyEvent.VK_EQUALS;
-            case 91 -> KeyEvent.VK_OPEN_BRACKET;
-            case 92 -> KeyEvent.VK_BACK_SLASH;
-            case 93 -> KeyEvent.VK_CLOSE_BRACKET;
-            case 96 -> KeyEvent.VK_BACK_QUOTE;
-            default -> keyCode;
-        };
+    public static void sendKeyRelease(Object browser, int glfwKeyCode, long scanCode, int modifiers) {
+        invokeVoid(browser, "onKeyReleased", new Class[]{KeyEvent.class},
+                new KeyEvent(glfwKeyCode, (int) scanCode, modifiers));
     }
 
     // === Reflection plumbing ===

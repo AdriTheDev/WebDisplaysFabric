@@ -36,9 +36,11 @@ public class WDRegistries {
             BlockBehaviour.Properties.of().strength(2.0f).sound(SoundType.METAL));
 
     // === BLOCK ITEMS ===
-    public static final Item SCREEN_ITEM = registerItem("screen", props -> new BlockItem(SCREEN_BLOCK, props));
-    public static final Item KEYBOARD_LEFT_ITEM = registerItem("kb_left", props -> new BlockItem(KEYBOARD_LEFT, props));
-    public static final Item KEYBOARD_RIGHT_ITEM = registerItem("kb_right", props -> new BlockItem(KEYBOARD_RIGHT, props));
+    // useBlockDescriptionPrefix() makes these resolve "block.webdisplays.*" translation keys
+    // rather than "item.webdisplays.*", which is where the block names live in the lang files.
+    public static final Item SCREEN_ITEM = registerBlockItem("screen", SCREEN_BLOCK);
+    public static final Item KEYBOARD_LEFT_ITEM = registerBlockItem("kb_left", KEYBOARD_LEFT);
+    public static final Item KEYBOARD_RIGHT_ITEM = registerBlockItem("kb_right", KEYBOARD_RIGHT);
 
     // === ITEMS ===
     public static final Item CONFIGURATOR = registerItem("screencfg", net.montoyo.wd.item.ItemScreenConfigurator::new);
@@ -62,6 +64,12 @@ public class WDRegistries {
         Identifier blockId = id(name);
         T block = factory.apply(properties.setId(ResourceKey.create(Registries.BLOCK, blockId)));
         return Registry.register(BuiltInRegistries.BLOCK, blockId, block);
+    }
+
+    private static Item registerBlockItem(String name, Block block) {
+        ResourceKey<Item> itemKey = ResourceKey.create(Registries.ITEM, id(name));
+        Item.Properties props = new Item.Properties().setId(itemKey).useBlockDescriptionPrefix();
+        return Registry.register(BuiltInRegistries.ITEM, itemKey, new BlockItem(block, props));
     }
 
     private static <T extends Item> T registerItem(String name, Function<Item.Properties, T> factory) {
