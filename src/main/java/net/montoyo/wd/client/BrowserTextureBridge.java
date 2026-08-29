@@ -8,8 +8,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.AbstractTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
-import net.montoyo.wd.utilities.data.BlockSide;
 import net.montoyo.wd.client.mcef.MCEFHelper;
+import net.montoyo.wd.utilities.data.BlockSide;
 
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -27,25 +27,42 @@ import java.util.concurrent.ConcurrentHashMap;
  * live browser's texture out from under MCEF.
  */
 public final class BrowserTextureBridge {
-    private static final ConcurrentHashMap<String, Identifier> REGISTERED = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Registration> REGISTERED = new ConcurrentHashMap<>();
 
     private BrowserTextureBridge() {
+    }
+
+    /** A published identifier together with the browser it was bound to. */
+    private record Registration(Identifier id, Object browser) {
     }
 
     /**
      * Returns the texture identifier to render {@code browser} with, registering it on first use,
      * or null while the browser has not produced a frame yet.
+     *
+     * <p>A screen's browser can be replaced while the identifier stays the same, so the binding is
+     * checked on every call: a stale registration would keep pointing the renderer at a dead
+     * browser's texture, leaving the screen frozen or blank.
      */
     public static Identifier textureIdFor(Object browser, String key) {
         if (browser == null) return null;
         GpuTextureView view = MCEFHelper.getBrowserTextureView(browser);
         if (view == null) return null;
 
-        return REGISTERED.computeIfAbsent(key, k -> {
-            Identifier id = Identifier.fromNamespaceAndPath("webdisplays", "browser/" + k);
-            Minecraft.getInstance().getTextureManager().register(id, new BrowserTexture(browser));
-            return id;
-        });
+        Registration existing = REGISTERED.get(key);
+        if (existing != null && existing.browser() == browser) {
+            return existing.id();
+        }
+
+        Identifier id = existing != null
+                ? existing.id()
+                : Identifier.fromNamespaceAndPath("webdisplays", "browser/" + key);
+
+        // register() replaces any existing entry under this identifier, so rebinding needs no
+        // separate release; the outgoing BrowserTexture's close() is a no-op by design.
+        Minecraft.getInstance().getTextureManager().register(id, new BrowserTexture(browser));
+        REGISTERED.put(key, new Registration(id, browser));
+        return id;
     }
 
     /** Stable per-face key, shared by the renderer and the block entity's cleanup path. */
@@ -55,9 +72,9 @@ public final class BrowserTextureBridge {
 
     /** Drops the texture registration for a screen that is going away. */
     public static void release(String key) {
-        Identifier id = REGISTERED.remove(key);
-        if (id != null) {
-            Minecraft.getInstance().getTextureManager().release(id);
+        Registration registration = REGISTERED.remove(key);
+        if (registration != null) {
+            Minecraft.getInstance().getTextureManager().release(registration.id());
         }
     }
 

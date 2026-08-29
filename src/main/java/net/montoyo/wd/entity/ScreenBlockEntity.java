@@ -461,7 +461,13 @@ public class ScreenBlockEntity extends BlockEntity {
     public void loadAdditional(ValueInput input) {
         super.loadAdditional(input);
 
+        // A block update re-runs this on the client for a screen that may already be showing a
+        // live browser. Carry those browsers across the rebuild rather than dropping the
+        // ScreenData that owns them: an orphaned browser is never closed, keeps rendering, and
+        // leaves the screen showing a texture nothing updates any more.
+        List<ScreenData> previous = new ArrayList<>(screens);
         screens.clear();
+
         for (ValueInput screenIn : input.childrenListOrEmpty("screens")) {
             BlockSide side = BlockSide.fromInt(screenIn.getIntOr("side", 0));
             Vector2i res = new Vector2i(screenIn.getIntOr("resX", 640), screenIn.getIntOr("resY", 640));
@@ -475,7 +481,41 @@ public class ScreenBlockEntity extends BlockEntity {
             screen.rotation = rot;
             screen.autoVolume = autoVol;
             screen.url = url;
+
+            ScreenData old = null;
+            for (ScreenData candidate : previous) {
+                if (candidate.side == side) { old = candidate; break; }
+            }
+
+            if (old != null && old.browser != null) {
+                screen.browser = old.browser;
+                screen.lastUrl = old.lastUrl;
+                screen.zoomLevel = old.zoomLevel;
+                previous.remove(old);
+
+                if (old.resolution.x != res.x || old.resolution.y != res.y) {
+                    MCEFHelper.resizeBrowser(screen.browser, res.x, res.y);
+                }
+                if (url != null && !url.equals(old.url)) {
+                    try {
+                        MCEFHelper.loadBrowserUrl(screen.browser, url(url));
+                    } catch (IOException e) {
+                        Log.warning("Invalid URL: {}", url);
+                    }
+                }
+            }
+
             screens.add(screen);
+        }
+
+        // Anything left over is a face that no longer exists; close its browser for real.
+        for (ScreenData stale : previous) {
+            if (stale.browser != null) {
+                if (level != null && level.isClientSide()) {
+                    releaseTexture(stale.side);
+                }
+                stale.unload();
+            }
         }
         ytVolume = input.getFloatOr("ytVolume", 1.0f);
 
