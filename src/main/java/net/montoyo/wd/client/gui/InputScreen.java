@@ -79,7 +79,9 @@ public class InputScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
-        this.extractBackground(graphics, mouseX, mouseY, partialTick);
+        // Do not call extractBackground here: Screen#extractRenderStateWithTooltipAndSubtitles
+        // already does, and blurring twice in one frame throws. Leaving the background alone
+        // also keeps the screen you are typing on visible, which is the point of this overlay.
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
 
         String display = inputBuffer.toString();
