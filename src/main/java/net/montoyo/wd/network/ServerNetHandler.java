@@ -16,7 +16,7 @@ public class ServerNetHandler {
     public static void register() {
         ServerPlayNetworking.registerGlobalReceiver(ScreenActionPayload.TYPE, (payload, context) -> {
             ServerPlayer player = context.player();
-            Level level = player.serverLevel();
+            Level level = player.level();
             if (!level.isLoaded(payload.pos())) return;
 
             context.server().execute(() -> {

@@ -47,7 +47,7 @@ public class WebDisplays implements ModInitializer {
         WDRegistries.register();
 
         // Register network payload types (play phase)
-        PayloadTypeRegistry.playC2S().register(ScreenActionPayload.TYPE, ScreenActionPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ScreenActionPayload.TYPE, ScreenActionPayload.CODEC);
 
         // Register server-side network handlers
         ServerNetHandler.register();

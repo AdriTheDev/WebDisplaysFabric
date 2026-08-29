@@ -3,7 +3,7 @@
 	"id": "webdisplays",
 	"version": "${version}",
 	"name": "WebDisplays",
-	"description": "Adds in-game web browser screens powered by MCEF (Minecraft Chromium Embedded Framework)",
+	"description": "Adds in-game web browser screens powered by MCEF Modern (Minecraft Chromium Embedded Framework)",
 	"authors": [
 		"LX",
 		"ds58",
@@ -27,16 +27,13 @@
 			"net.montoyo.wd.client.ClientInit"
 		]
 	},
-	"mixins": [
-		"webdisplays.mixins.json"
-	],
 	"depends": {
-		"fabricloader": ">=0.16.7",
-		"minecraft": "~1.21.1",
-		"java": ">=21",
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.1",
+		"java": ">=25",
 		"fabric-api": "*"
 	},
 	"suggests": {
-		"mcef": ">=2.1.0"
+		"mcef-modern": "*"
 	}
 }

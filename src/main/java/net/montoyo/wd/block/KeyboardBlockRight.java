@@ -5,7 +5,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.ItemInteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
@@ -34,7 +33,7 @@ public class KeyboardBlockRight extends HorizontalDirectionalBlock implements En
     }
 
     @Override
-    protected MapCodec<? extends HorizontalDirectionalBlock> codec() {
+    public MapCodec<? extends HorizontalDirectionalBlock> codec() {
         return simpleCodec(KeyboardBlockRight::new);
     }
 
@@ -44,7 +43,7 @@ public class KeyboardBlockRight extends HorizontalDirectionalBlock implements En
     }
 
     @Override
-    public VoxelShape getOcclusionShape(BlockState state, BlockGetter level, BlockPos pos) {
+    public VoxelShape getOcclusionShape(BlockState state) {
         return Shapes.empty();
     }
 
@@ -54,7 +53,7 @@ public class KeyboardBlockRight extends HorizontalDirectionalBlock implements En
     }
 
     @Override
-    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+    public void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
         builder.add(FACING);
     }
 
@@ -64,7 +63,7 @@ public class KeyboardBlockRight extends HorizontalDirectionalBlock implements En
     }
 
     @Override
-    protected ItemInteractionResult useItemOn(ItemStack stack, BlockState state, Level level, BlockPos pos, Player player, InteractionHand hand, BlockHitResult hitResult) {
+    public InteractionResult useItemOn(ItemStack stack, BlockState state, Level level, BlockPos pos, Player player, InteractionHand hand, BlockHitResult hitResult) {
         if (stack.getItem() == WDRegistries.LINKER) {
             if (level.getBlockEntity(pos) instanceof KeyboardBlockEntity kb) {
                 BlockPos screenPos = ItemLinker.getLinkedScreen(player);
@@ -73,17 +72,17 @@ public class KeyboardBlockRight extends HorizontalDirectionalBlock implements En
                     kb.setLinked(screenPos, screenSide);
                     ItemLinker.clearLink(player);
                     if (!level.isClientSide()) {
-                        player.displayClientMessage(Component.literal("Keyboard linked to screen at " + screenPos.toShortString()), true);
+                        player.sendOverlayMessage(Component.literal("Keyboard linked to screen at " + screenPos.toShortString()));
                     }
                 }
-                return ItemInteractionResult.SUCCESS;
+                return InteractionResult.SUCCESS;
             }
         }
-        return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+        return InteractionResult.TRY_WITH_EMPTY_HAND;
     }
 
     @Override
-    protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
+    public InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
         // Client-side keyboard GUI opening is handled in ClientInit
         return InteractionResult.SUCCESS;
     }

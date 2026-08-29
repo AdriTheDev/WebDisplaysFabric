@@ -48,18 +48,6 @@ public class ClientInit implements ClientModInitializer {
             }
         });
 
-        // TEMPORARILY DISABLED: Reset GL pixel store state - testing if this causes noise
-        // net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents.START.register(context -> {
-        //     org.lwjgl.opengl.GL11.glPixelStorei(org.lwjgl.opengl.GL11.GL_UNPACK_ROW_LENGTH, 0);
-        //     org.lwjgl.opengl.GL11.glPixelStorei(org.lwjgl.opengl.GL11.GL_UNPACK_SKIP_ROWS, 0);
-        //     org.lwjgl.opengl.GL11.glPixelStorei(org.lwjgl.opengl.GL11.GL_UNPACK_SKIP_PIXELS, 0);
-        // });
-        // net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents.AFTER_ENTITIES.register(context -> {
-        //     org.lwjgl.opengl.GL11.glPixelStorei(org.lwjgl.opengl.GL11.GL_UNPACK_ROW_LENGTH, 0);
-        //     org.lwjgl.opengl.GL11.glPixelStorei(org.lwjgl.opengl.GL11.GL_UNPACK_SKIP_ROWS, 0);
-        //     org.lwjgl.opengl.GL11.glPixelStorei(org.lwjgl.opengl.GL11.GL_UNPACK_SKIP_PIXELS, 0);
-        // });
-
         // Periodically retry browser creation for screens that were created before MCEF initialized
         // Also detect page navigation and re-inject window.open override (throttled to 1/sec)
         ClientTickEvents.START_CLIENT_TICK.register(client -> {
@@ -110,9 +98,9 @@ public class ClientInit implements ClientModInitializer {
             }
 
             boolean isShift = client.player.isShiftKeyDown();
-            boolean isCtrl = net.minecraft.client.gui.screens.Screen.hasControlDown();
+            boolean isCtrl = client.hasControlDown();
 
-            int currentSlot = client.player.getInventory().selected;
+            int currentSlot = client.player.getInventory().getSelectedSlot();
 
             if (previousHotbarSlot < 0) {
                 // Initialize tracking - just record current slot, don't trigger
@@ -130,7 +118,7 @@ public class ClientInit implements ClientModInitializer {
                     // Only handle single-step scroll wheel changes (±1)
                     // Ignore multi-step changes (likely number key presses)
                     if (Math.abs(delta) == 1) {
-                        client.player.getInventory().selected = previousHotbarSlot;
+                        client.player.getInventory().setSelectedSlot(previousHotbarSlot);
                         ScreenCursorTracker.handleScroll(delta > 0 ? 1.0 : -1.0);
                         return;
                     }
@@ -144,7 +132,7 @@ public class ClientInit implements ClientModInitializer {
         ClientTickEvents.START_CLIENT_TICK.register(client -> {
             if (client.level == null || client.player == null) return;
             boolean isTabDown = com.mojang.blaze3d.platform.InputConstants.isKeyDown(
-                    client.getWindow().getWindow(), com.mojang.blaze3d.platform.InputConstants.KEY_TAB);
+                    client.getWindow(), com.mojang.blaze3d.platform.InputConstants.KEY_TAB);
             if (isTabDown && !wasTabDown) {
                 ScreenCursorTracker.toggleCursorVisible();
             }
@@ -155,13 +143,12 @@ public class ClientInit implements ClientModInitializer {
         ClientTickEvents.START_CLIENT_TICK.register(client -> {
             if (client.level == null || client.player == null) return;
             boolean isF6Down = com.mojang.blaze3d.platform.InputConstants.isKeyDown(
-                    client.getWindow().getWindow(), com.mojang.blaze3d.platform.InputConstants.KEY_F6);
+                    client.getWindow(), com.mojang.blaze3d.platform.InputConstants.KEY_F6);
             if (isF6Down && !wasF6Down) {
                 mcefRenderingEnabled = !mcefRenderingEnabled;
-                client.player.displayClientMessage(
+                client.player.sendOverlayMessage(
                         net.minecraft.network.chat.Component.literal(
-                                "WebDisplays 渲染: " + (mcefRenderingEnabled ? "开启" : "关闭")),
-                        true);
+                                "WebDisplays 渲染: " + (mcefRenderingEnabled ? "开启" : "关闭")));
             }
             wasF6Down = isF6Down;
         });
@@ -213,14 +200,14 @@ public class ClientInit implements ClientModInitializer {
                     Minecraft mc = Minecraft.getInstance();
                     if (mc.screen instanceof InputScreen && ((InputScreen) mc.screen).isFor(screenPos, screenSide)) {
                         mc.setScreen(null);
-                        player.displayClientMessage(net.minecraft.network.chat.Component.literal("Input mode: OFF"), true);
+                        player.sendOverlayMessage(net.minecraft.network.chat.Component.literal("Input mode: OFF"));
                     } else {
                         mc.setScreen(new InputScreen(screenPos, screenSide));
-                        player.displayClientMessage(net.minecraft.network.chat.Component.literal("Input mode: ON (ESC to exit)"), true);
+                        player.sendOverlayMessage(net.minecraft.network.chat.Component.literal("Input mode: ON (ESC to exit)"));
                     }
                     return InteractionResult.SUCCESS;
                 } else {
-                    player.displayClientMessage(net.minecraft.network.chat.Component.translatable("webdisplays.message.notLinked"), true);
+                    player.sendOverlayMessage(net.minecraft.network.chat.Component.translatable("webdisplays.message.notLinked"));
                     return InteractionResult.SUCCESS;
                 }
             }

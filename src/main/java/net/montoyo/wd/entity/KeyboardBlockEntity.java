@@ -3,11 +3,11 @@ package net.montoyo.wd.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.network.protocol.Packet;
-import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 import net.montoyo.wd.registry.WDRegistries;
 import net.montoyo.wd.utilities.data.BlockSide;
 import org.jetbrains.annotations.Nullable;
@@ -36,22 +36,25 @@ public class KeyboardBlockEntity extends BlockEntity {
     public @Nullable BlockSide getLinkedSide() { return linkedSide; }
 
     @Override
-    protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
-        super.saveAdditional(tag, registries);
-        if (linkedPos != null) {
-            tag.putInt("lx", linkedPos.getX());
-            tag.putInt("ly", linkedPos.getY());
-            tag.putInt("lz", linkedPos.getZ());
-            tag.putInt("ls", linkedSide.id);
+    public void saveAdditional(ValueOutput output) {
+        super.saveAdditional(output);
+        if (linkedPos != null && linkedSide != null) {
+            output.putInt("lx", linkedPos.getX());
+            output.putInt("ly", linkedPos.getY());
+            output.putInt("lz", linkedPos.getZ());
+            output.putInt("ls", linkedSide.id);
         }
     }
 
     @Override
-    protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
-        super.loadAdditional(tag, registries);
-        if (tag.contains("lx")) {
-            linkedPos = new BlockPos(tag.getInt("lx"), tag.getInt("ly"), tag.getInt("lz"));
-            linkedSide = BlockSide.fromInt(tag.getInt("ls"));
+    public void loadAdditional(ValueInput input) {
+        super.loadAdditional(input);
+        if (input.getInt("lx").isPresent()) {
+            linkedPos = new BlockPos(
+                    input.getIntOr("lx", 0),
+                    input.getIntOr("ly", 0),
+                    input.getIntOr("lz", 0));
+            linkedSide = BlockSide.fromInt(input.getIntOr("ls", 0));
         } else {
             linkedPos = null;
             linkedSide = null;
@@ -60,13 +63,11 @@ public class KeyboardBlockEntity extends BlockEntity {
 
     @Override
     public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
-        CompoundTag tag = super.getUpdateTag(registries);
-        saveAdditional(tag, registries);
-        return tag;
+        return saveCustomOnly(registries);
     }
 
     @Override
-    public Packet<ClientGamePacketListener> getUpdatePacket() {
+    public ClientboundBlockEntityDataPacket getUpdatePacket() {
         return ClientboundBlockEntityDataPacket.create(this);
     }
 }

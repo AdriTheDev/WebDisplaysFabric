@@ -5,11 +5,11 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 public record ScreenActionPayload(BlockPos pos, int sideOrdinal, String action, String extraData) implements CustomPacketPayload {
     public static final CustomPacketPayload.Type<ScreenActionPayload> TYPE =
-            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath("webdisplays", "screen_action"));
+            new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath("webdisplays", "screen_action"));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, ScreenActionPayload> CODEC =
             StreamCodec.composite(

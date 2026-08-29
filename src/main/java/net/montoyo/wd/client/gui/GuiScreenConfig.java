@@ -1,7 +1,7 @@
 package net.montoyo.wd.client.gui;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
@@ -47,13 +47,11 @@ public class GuiScreenConfig extends Screen {
         }
 
         widthInput = new EditBox(this.font, cx - 50, cy - 35, 100, 20, Component.literal("Width"));
-        widthInput.setFilter(s -> s.isEmpty() || s.matches("\\d+"));
         widthInput.setMaxLength(3);
         widthInput.setValue(screen != null ? String.valueOf(screen.size.x) : "2");
         addRenderableWidget(widthInput);
 
         heightInput = new EditBox(this.font, cx - 50, cy - 5, 100, 20, Component.literal("Height"));
-        heightInput.setFilter(s -> s.isEmpty() || s.matches("\\d+"));
         heightInput.setMaxLength(3);
         heightInput.setValue(screen != null ? String.valueOf(screen.size.y) : "2");
         addRenderableWidget(heightInput);
@@ -144,24 +142,22 @@ public class GuiScreenConfig extends Screen {
     }
 
     @Override
-    public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        // Draw widgets first (inputs, buttons)
-        super.render(guiGraphics, mouseX, mouseY, partialTick);
+    public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick);
 
-        // Draw text on top at the same layer as the GUI
         int cx = this.width / 2;
 
-        guiGraphics.drawCenteredString(this.font, "Screen Size (1-100 blocks)", cx, this.height / 2 - 55, 0xFFFFFF);
-        guiGraphics.drawString(this.font, "Width:", cx - 50, this.height / 2 - 47, 0xCCCCCC);
-        guiGraphics.drawString(this.font, "Height:", cx - 50, this.height / 2 - 17, 0xCCCCCC);
+        graphics.centeredText(this.font, "Screen Size (1-100 blocks)", cx, this.height / 2 - 55, 0xFFFFFFFF);
+        graphics.text(this.font, "Width:", cx - 50, this.height / 2 - 47, 0xFFCCCCCC);
+        graphics.text(this.font, "Height:", cx - 50, this.height / 2 - 17, 0xFFCCCCCC);
 
         if (!isNew && screen != null) {
-            guiGraphics.drawCenteredString(this.font,
+            graphics.centeredText(this.font,
                     "Owner: " + (screen.owner != null ? screen.owner : "N/A"),
-                    cx, this.height / 2 - 80, 0xAAAAAA);
-            guiGraphics.drawCenteredString(this.font,
+                    cx, this.height / 2 - 80, 0xFFAAAAAA);
+            graphics.centeredText(this.font,
                     "Resolution: " + screen.resolution.x + "x" + screen.resolution.y,
-                    cx, this.height / 2 - 68, 0x888888);
+                    cx, this.height / 2 - 68, 0xFF888888);
         }
     }
 

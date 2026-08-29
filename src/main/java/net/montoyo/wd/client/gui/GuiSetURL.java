@@ -1,7 +1,8 @@
 package net.montoyo.wd.client.gui;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
@@ -10,7 +11,6 @@ import net.minecraft.network.chat.Component;
 import net.montoyo.wd.entity.ScreenBlockEntity;
 import net.montoyo.wd.network.ScreenActionPayload;
 import net.montoyo.wd.utilities.data.BlockSide;
-import net.minecraft.client.Minecraft;
 
 public class GuiSetURL extends Screen {
     private final BlockPos blockPos;
@@ -29,31 +29,13 @@ public class GuiSetURL extends Screen {
                 Component.translatable("webdisplays.gui.seturl.url"));
         urlField.setMaxLength(2048);
         urlField.setValue("https://");
-        urlField.setTextColor(0xFFFFFFFF);
-        this.addWidget(urlField);
+        this.addRenderableWidget(urlField);
         this.setInitialFocus(urlField);
 
         this.addRenderableWidget(Button.builder(
                 Component.translatable("webdisplays.gui.seturl.ok"),
-                button -> {
-                    String url = urlField.getValue();
-                    if (!url.isEmpty()) {
-                        try {
-                            String finalUrl = ScreenBlockEntity.url(url);
-                            if (ClientPlayNetworking.canSend(ScreenActionPayload.TYPE)) {
-                                ClientPlayNetworking.send(ScreenActionPayload.setUrl(
-                                        blockPos, side.id, finalUrl));
-                            }
-                            net.minecraft.world.level.block.entity.BlockEntity be =
-                                    Minecraft.getInstance().level.getBlockEntity(blockPos);
-                            if (be instanceof ScreenBlockEntity screen) {
-                                screen.setScreenURL(side, finalUrl);
-                            }
-                        } catch (Exception e) {
-                        }
-                    }
-                    this.onClose();
-                }).bounds(this.width / 2 - 100, this.height / 2 + 10, 95, 20).build());
+                button -> applyUrl()
+        ).bounds(this.width / 2 - 100, this.height / 2 + 10, 95, 20).build());
 
         this.addRenderableWidget(Button.builder(
                 Component.translatable("webdisplays.gui.seturl.cancel"),
@@ -61,12 +43,29 @@ public class GuiSetURL extends Screen {
         ).bounds(this.width / 2 + 5, this.height / 2 + 10, 95, 20).build());
     }
 
+    private void applyUrl() {
+        String url = urlField.getValue();
+        if (!url.isEmpty()) {
+            try {
+                String finalUrl = ScreenBlockEntity.url(url);
+                if (ClientPlayNetworking.canSend(ScreenActionPayload.TYPE)) {
+                    ClientPlayNetworking.send(ScreenActionPayload.setUrl(blockPos, side.id, finalUrl));
+                }
+                if (Minecraft.getInstance().level != null
+                        && Minecraft.getInstance().level.getBlockEntity(blockPos) instanceof ScreenBlockEntity screen) {
+                    screen.setScreenURL(side, finalUrl);
+                }
+            } catch (Exception ignored) {
+                // Malformed URL: leave the screen unchanged.
+            }
+        }
+        this.onClose();
+    }
+
     @Override
-    public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        super.render(guiGraphics, mouseX, mouseY, partialTick);
-        guiGraphics.drawCenteredString(this.font, this.title, this.width / 2, this.height / 2 - 50, 0xFFFFFF);
-        guiGraphics.fill(urlField.getX() - 2, urlField.getY() - 2, urlField.getX() + urlField.getWidth() + 2, urlField.getY() + urlField.getHeight() + 2, 0xFF555555);
-        urlField.render(guiGraphics, mouseX, mouseY, partialTick);
+    public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick);
+        graphics.centeredText(this.font, this.title, this.width / 2, this.height / 2 - 50, 0xFFFFFFFF);
     }
 
     @Override

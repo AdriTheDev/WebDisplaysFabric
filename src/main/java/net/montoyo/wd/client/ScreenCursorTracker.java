@@ -210,7 +210,7 @@ public class ScreenCursorTracker {
 
         if (mc.player.isShiftKeyDown()) {
             MCEFHelper.sendMouseWheel(currentCursor.screenData.browser, currentCursor.pixelX, currentCursor.pixelY, -delta * 4, 0);
-        } else if (net.minecraft.client.gui.screens.Screen.hasControlDown()) {
+        } else if (mc.hasControlDown()) {
             // Ctrl + scroll: zoom browser page
             ScreenData data = currentCursor.screenData;
             double step = 0.1;

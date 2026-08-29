@@ -3,15 +3,13 @@ package net.montoyo.wd.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
-import net.minecraft.network.protocol.Packet;
-import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
@@ -57,7 +55,7 @@ public class ScreenBlockEntity extends BlockEntity {
     @Override
     public void setLevel(net.minecraft.world.level.Level level) {
         super.setLevel(level);
-        if (level.isClientSide) {
+        if (level.isClientSide()) {
             synchronized (clientScreens) {
                 if (!clientScreens.contains(this)) {
                     clientScreens.add(this);
@@ -70,9 +68,10 @@ public class ScreenBlockEntity extends BlockEntity {
 
     @Override
     public void setRemoved() {
-        if (level != null && level.isClientSide) {
+        if (level != null && level.isClientSide()) {
             for (ScreenData screen : screens) {
                 if (screen.browser != null) {
+                    releaseTexture(screen.side);
                     screen.unload();
                 }
             }
@@ -104,10 +103,10 @@ public class ScreenBlockEntity extends BlockEntity {
         screens.add(new ScreenData(side, resolution, size, owner));
         updateAABB();
         setChanged();
-        if (level != null && level.isClientSide) {
+        if (level != null && level.isClientSide()) {
             load();
         }
-        if (level != null && !level.isClientSide) {
+        if (level != null && !level.isClientSide()) {
             level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
         }
     }
@@ -115,11 +114,14 @@ public class ScreenBlockEntity extends BlockEntity {
     public void removeScreen(BlockSide side) {
         ScreenData screen = getScreen(side);
         if (screen == null) return;
+        if (level != null && level.isClientSide()) {
+            releaseTexture(side);
+        }
         screen.unload();
         screens.remove(screen);
         updateAABB();
         setChanged();
-        if (level != null && !level.isClientSide) {
+        if (level != null && !level.isClientSide()) {
             level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
         }
     }
@@ -130,11 +132,11 @@ public class ScreenBlockEntity extends BlockEntity {
         ScreenData screen = getScreen(side);
         if (screen == null) return;
         screen.url = WebDisplays.applyBlacklist(url);
-        if (level != null && level.isClientSide && screen.browser != null) {
+        if (level != null && level.isClientSide() && screen.browser != null) {
             MCEFHelper.loadBrowserUrl(screen.browser, screen.url);
         }
         setChanged();
-        if (level != null && !level.isClientSide) {
+        if (level != null && !level.isClientSide()) {
             level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
         }
     }
@@ -147,11 +149,11 @@ public class ScreenBlockEntity extends BlockEntity {
         screen.resolution.set(res.x, res.y);
         screen.size.x = Math.max(1, (int) Math.ceil(res.x / 320.0f));
         screen.size.y = Math.max(1, (int) Math.ceil(res.y / 320.0f));
-        if (level != null && level.isClientSide && screen.browser != null) {
+        if (level != null && level.isClientSide() && screen.browser != null) {
             MCEFHelper.resizeBrowser(screen.browser, res.x, res.y);
         }
         setChanged();
-        if (level != null && !level.isClientSide) {
+        if (level != null && !level.isClientSide()) {
             level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
         }
         updateAABB();
@@ -162,7 +164,7 @@ public class ScreenBlockEntity extends BlockEntity {
         if (screen == null) return;
         screen.rotation = rot;
         setChanged();
-        if (level != null && !level.isClientSide) {
+        if (level != null && !level.isClientSide()) {
             level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
         }
     }
@@ -288,7 +290,7 @@ public class ScreenBlockEntity extends BlockEntity {
     public boolean isLoaded() { return loaded; }
 
     public void load() {
-        if (level != null && level.isClientSide && MCEFHelper.isMCEFAvailable()) {
+        if (level != null && level.isClientSide() && MCEFHelper.isMCEFAvailable()) {
             if (!MCEFHelper.isMCEFInitialized()) {
                 return;
             }
@@ -310,7 +312,7 @@ public class ScreenBlockEntity extends BlockEntity {
     }
 
     public boolean needsBrowserRetry() {
-        if (level == null || !level.isClientSide || !MCEFHelper.isMCEFAvailable()) return false;
+        if (level == null || !level.isClientSide() || !MCEFHelper.isMCEFAvailable()) return false;
         if (!MCEFHelper.isMCEFInitialized()) return true;
         for (ScreenData screen : screens) {
             if (screen.browser == null) return true;
@@ -319,7 +321,7 @@ public class ScreenBlockEntity extends BlockEntity {
     }
 
     public boolean retryCreateBrowsers() {
-        if (level == null || !level.isClientSide || !MCEFHelper.isMCEFAvailable()) return false;
+        if (level == null || !level.isClientSide() || !MCEFHelper.isMCEFAvailable()) return false;
         if (!MCEFHelper.isMCEFInitialized()) return false;
         boolean created = false;
         for (ScreenData screen : screens) {
@@ -357,9 +359,10 @@ public class ScreenBlockEntity extends BlockEntity {
     }
 
     public void onDestroy() {
-        if (level != null && level.isClientSide) {
+        if (level != null && level.isClientSide()) {
             for (ScreenData screen : screens) {
                 if (screen.browser != null) {
+                    releaseTexture(screen.side);
                     screen.unload();
                 }
             }
@@ -387,6 +390,12 @@ public class ScreenBlockEntity extends BlockEntity {
         MCEFHelper.injectJavascript(browser, WINDOW_OPEN_OVERRIDE_JS);
     }
 
+    /** Client-only: drops the TextureManager registration backing this face's browser. */
+    private void releaseTexture(BlockSide side) {
+        net.montoyo.wd.client.BrowserTextureBridge.release(
+                net.montoyo.wd.client.BrowserTextureBridge.keyFor(worldPosition, side));
+    }
+
     // === Sound ===
 
     public void playSound(float volume) {
@@ -401,12 +410,17 @@ public class ScreenBlockEntity extends BlockEntity {
 
     public AABB getRenderBoundingBox() {
         if (renderBB == null) updateAABB();
-        return renderBB != null ? renderBB : new AABB(worldPosition);
+        return renderBB != null ? renderBB : singleBlockBB();
+    }
+
+    private AABB singleBlockBB() {
+        return new AABB(worldPosition.getX(), worldPosition.getY(), worldPosition.getZ(),
+                worldPosition.getX() + 1.0, worldPosition.getY() + 1.0, worldPosition.getZ() + 1.0);
     }
 
     private void updateAABB() {
         if (screens.isEmpty()) {
-            renderBB = new AABB(worldPosition);
+            renderBB = singleBlockBB();
             return;
         }
         double minX = worldPosition.getX(), minY = worldPosition.getY(), minZ = worldPosition.getZ();
@@ -424,56 +438,49 @@ public class ScreenBlockEntity extends BlockEntity {
     // === NBT Serialization ===
 
     @Override
-    protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
-        super.saveAdditional(tag, registries);
+    public void saveAdditional(ValueOutput output) {
+        super.saveAdditional(output);
 
-        ListTag screenList = new ListTag();
+        ValueOutput.ValueOutputList screenList = output.childrenList("screens");
         for (ScreenData screen : screens) {
-            CompoundTag screenTag = new CompoundTag();
-            screenTag.putInt("side", screen.side.id);
-            screenTag.putInt("resX", screen.resolution.x);
-            screenTag.putInt("resY", screen.resolution.y);
-            screenTag.putInt("sizeX", screen.size.x);
-            screenTag.putInt("sizeY", screen.size.y);
-            screenTag.putInt("rotation", screen.rotation.id);
-            screenTag.putBoolean("autoVolume", screen.autoVolume);
-            if (screen.owner != null) screenTag.putString("owner", screen.owner);
-            if (screen.url != null) screenTag.putString("url", screen.url);
-            screenList.add(screenTag);
+            ValueOutput screenOut = screenList.addChild();
+            screenOut.putInt("side", screen.side.id);
+            screenOut.putInt("resX", screen.resolution.x);
+            screenOut.putInt("resY", screen.resolution.y);
+            screenOut.putInt("sizeX", screen.size.x);
+            screenOut.putInt("sizeY", screen.size.y);
+            screenOut.putInt("rotation", screen.rotation.id);
+            screenOut.putBoolean("autoVolume", screen.autoVolume);
+            if (screen.owner != null) screenOut.putString("owner", screen.owner);
+            if (screen.url != null) screenOut.putString("url", screen.url);
         }
-        tag.put("screens", screenList);
-        tag.putFloat("ytVolume", ytVolume);
+        output.putFloat("ytVolume", ytVolume);
     }
 
     @Override
-    public void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
-        super.loadAdditional(tag, registries);
+    public void loadAdditional(ValueInput input) {
+        super.loadAdditional(input);
 
         screens.clear();
-        if (tag.contains("screens")) {
-            ListTag screenList = tag.getList("screens", Tag.TAG_COMPOUND);
-            for (int i = 0; i < screenList.size(); i++) {
-                CompoundTag screenTag = screenList.getCompound(i);
-                BlockSide side = BlockSide.fromInt(screenTag.getInt("side"));
-                Vector2i res = new Vector2i(screenTag.getInt("resX"), screenTag.getInt("resY"));
-                Vector2i size = new Vector2i(screenTag.getInt("sizeX"), screenTag.getInt("sizeY"));
-                Rotation rot = Rotation.fromInt(screenTag.getInt("rotation"));
-                boolean autoVol = screenTag.getBoolean("autoVolume");
-                String owner = screenTag.contains("owner") ? screenTag.getString("owner") : null;
-                String url = screenTag.contains("url") ? screenTag.getString("url") : null;
+        for (ValueInput screenIn : input.childrenListOrEmpty("screens")) {
+            BlockSide side = BlockSide.fromInt(screenIn.getIntOr("side", 0));
+            Vector2i res = new Vector2i(screenIn.getIntOr("resX", 640), screenIn.getIntOr("resY", 640));
+            Vector2i size = new Vector2i(screenIn.getIntOr("sizeX", 2), screenIn.getIntOr("sizeY", 2));
+            Rotation rot = Rotation.fromInt(screenIn.getIntOr("rotation", 0));
+            boolean autoVol = screenIn.getBooleanOr("autoVolume", false);
+            String owner = screenIn.getString("owner").orElse(null);
+            String url = screenIn.getString("url").orElse(null);
 
-                ScreenData screen = new ScreenData(side, res, size, owner);
-                screen.rotation = rot;
-                screen.autoVolume = autoVol;
-                screen.url = url;
-                screens.add(screen);
-            }
+            ScreenData screen = new ScreenData(side, res, size, owner);
+            screen.rotation = rot;
+            screen.autoVolume = autoVol;
+            screen.url = url;
+            screens.add(screen);
         }
-        if (tag.contains("ytVolume")) {
-            ytVolume = tag.getFloat("ytVolume");
-        }
+        ytVolume = input.getFloatOr("ytVolume", 1.0f);
+
         updateAABB();
-        if (level != null && level.isClientSide) {
+        if (level != null && level.isClientSide()) {
             load();
         }
     }
@@ -501,13 +508,11 @@ public class ScreenBlockEntity extends BlockEntity {
 
     @Override
     public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
-        CompoundTag tag = super.getUpdateTag(registries);
-        saveAdditional(tag, registries);
-        return tag;
+        return saveCustomOnly(registries);
     }
 
     @Override
-    public Packet<ClientGamePacketListener> getUpdatePacket() {
+    public ClientboundBlockEntityDataPacket getUpdatePacket() {
         return ClientboundBlockEntityDataPacket.create(this);
     }
 }

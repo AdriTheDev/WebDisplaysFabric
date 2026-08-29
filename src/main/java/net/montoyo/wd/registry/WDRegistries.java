@@ -1,8 +1,11 @@
 package net.montoyo.wd.registry;
 
+import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTab;
@@ -10,6 +13,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.SoundType;
+import net.fabricmc.fabric.api.creativetab.v1.FabricCreativeModeTab;
 import net.fabricmc.fabric.api.object.builder.v1.block.entity.FabricBlockEntityTypeBuilder;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
@@ -20,22 +24,21 @@ import net.montoyo.wd.entity.KeyboardBlockEntity;
 import net.montoyo.wd.entity.ScreenBlockEntity;
 
 import java.util.function.Function;
-import java.util.function.Supplier;
 
 public class WDRegistries {
 
     // === BLOCKS ===
-    public static final ScreenBlock SCREEN_BLOCK = registerBlock("screen",
-            () -> new ScreenBlock(BlockBehaviour.Properties.of().strength(2.0f).sound(SoundType.METAL)));
-    public static final KeyboardBlockLeft KEYBOARD_LEFT = registerBlock("kb_left",
-            () -> new KeyboardBlockLeft(BlockBehaviour.Properties.of().strength(2.0f).sound(SoundType.METAL)));
-    public static final KeyboardBlockRight KEYBOARD_RIGHT = registerBlock("kb_right",
-            () -> new KeyboardBlockRight(BlockBehaviour.Properties.of().strength(2.0f).sound(SoundType.METAL)));
+    public static final ScreenBlock SCREEN_BLOCK = registerBlock("screen", ScreenBlock::new,
+            BlockBehaviour.Properties.of().strength(2.0f).sound(SoundType.METAL));
+    public static final KeyboardBlockLeft KEYBOARD_LEFT = registerBlock("kb_left", KeyboardBlockLeft::new,
+            BlockBehaviour.Properties.of().strength(2.0f).sound(SoundType.METAL));
+    public static final KeyboardBlockRight KEYBOARD_RIGHT = registerBlock("kb_right", KeyboardBlockRight::new,
+            BlockBehaviour.Properties.of().strength(2.0f).sound(SoundType.METAL));
 
     // === BLOCK ITEMS ===
-    public static final Item SCREEN_ITEM = registerBlockItem("screen", SCREEN_BLOCK);
-    public static final Item KEYBOARD_LEFT_ITEM = registerBlockItem("kb_left", KEYBOARD_LEFT);
-    public static final Item KEYBOARD_RIGHT_ITEM = registerBlockItem("kb_right", KEYBOARD_RIGHT);
+    public static final Item SCREEN_ITEM = registerItem("screen", props -> new BlockItem(SCREEN_BLOCK, props));
+    public static final Item KEYBOARD_LEFT_ITEM = registerItem("kb_left", props -> new BlockItem(KEYBOARD_LEFT, props));
+    public static final Item KEYBOARD_RIGHT_ITEM = registerItem("kb_right", props -> new BlockItem(KEYBOARD_RIGHT, props));
 
     // === ITEMS ===
     public static final Item CONFIGURATOR = registerItem("screencfg", net.montoyo.wd.item.ItemScreenConfigurator::new);
@@ -50,31 +53,25 @@ public class WDRegistries {
     public static SoundEvent SCREENCFG_OPEN;
 
     // === CREATIVE TAB ===
+    public static final ResourceKey<CreativeModeTab> CREATIVE_TAB_KEY =
+            ResourceKey.create(Registries.CREATIVE_MODE_TAB, id("main"));
     public static CreativeModeTab CREATIVE_TAB;
 
-    private static <T extends Block> T registerBlock(String name, Supplier<T> factory) {
-        T block = factory.get();
-        net.minecraft.core.Registry.register(BuiltInRegistries.BLOCK, id(name), block);
-        return block;
+    private static <T extends Block> T registerBlock(String name, Function<BlockBehaviour.Properties, T> factory,
+                                                     BlockBehaviour.Properties properties) {
+        Identifier blockId = id(name);
+        T block = factory.apply(properties.setId(ResourceKey.create(Registries.BLOCK, blockId)));
+        return Registry.register(BuiltInRegistries.BLOCK, blockId, block);
     }
 
-    private static Item registerBlockItem(String name, Block block) {
-        Item item = new BlockItem(block, new Item.Properties());
-        net.minecraft.core.Registry.register(BuiltInRegistries.ITEM, id(name), item);
-        return item;
-    }
-
-    private static Item registerItem(String name, Function<Item.Properties, Item> factory) {
-        Item item = factory.apply(new Item.Properties());
-        net.minecraft.core.Registry.register(BuiltInRegistries.ITEM, id(name), item);
-        return item;
+    private static <T extends Item> T registerItem(String name, Function<Item.Properties, T> factory) {
+        ResourceKey<Item> itemKey = ResourceKey.create(Registries.ITEM, id(name));
+        return Registry.register(BuiltInRegistries.ITEM, itemKey, factory.apply(new Item.Properties().setId(itemKey)));
     }
 
     private static SoundEvent registerSound(String name) {
-        ResourceLocation soundId = id(name);
-        SoundEvent event = SoundEvent.createVariableRangeEvent(soundId);
-        net.minecraft.core.Registry.register(BuiltInRegistries.SOUND_EVENT, soundId, event);
-        return event;
+        Identifier soundId = id(name);
+        return Registry.register(BuiltInRegistries.SOUND_EVENT, soundId, SoundEvent.createVariableRangeEvent(soundId));
     }
 
     public static void register() {
@@ -83,17 +80,17 @@ public class WDRegistries {
         SCREENCFG_OPEN = registerSound("screencfg_open");
 
         // Register block entities
-        SCREEN_BLOCK_ENTITY = net.minecraft.core.Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE,
+        SCREEN_BLOCK_ENTITY = Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE,
                 id("screen"),
                 FabricBlockEntityTypeBuilder.create(ScreenBlockEntity::new, SCREEN_BLOCK).build());
-        KEYBOARD_BLOCK_ENTITY = net.minecraft.core.Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE,
+        KEYBOARD_BLOCK_ENTITY = Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE,
                 id("kb_left"),
                 FabricBlockEntityTypeBuilder.create(KeyboardBlockEntity::new, KEYBOARD_LEFT, KEYBOARD_RIGHT).build());
 
         // Register creative tab
-        CREATIVE_TAB = net.minecraft.core.Registry.register(BuiltInRegistries.CREATIVE_MODE_TAB,
-                id("main"),
-                CreativeModeTab.builder(CreativeModeTab.Row.TOP, 0)
+        CREATIVE_TAB = Registry.register(BuiltInRegistries.CREATIVE_MODE_TAB,
+                CREATIVE_TAB_KEY,
+                FabricCreativeModeTab.builder()
                         .title(Component.translatable("itemGroup.webdisplays"))
                         .icon(() -> new ItemStack(SCREEN_BLOCK))
                         .displayItems((params, output) -> {
@@ -106,7 +103,7 @@ public class WDRegistries {
                         .build());
     }
 
-    public static ResourceLocation id(String path) {
-        return ResourceLocation.fromNamespaceAndPath("webdisplays", path);
+    public static Identifier id(String path) {
+        return Identifier.fromNamespaceAndPath("webdisplays", path);
     }
 }

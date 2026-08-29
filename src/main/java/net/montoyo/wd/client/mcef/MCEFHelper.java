@@ -1,312 +1,289 @@
 package net.montoyo.wd.client.mcef;
 
-import java.lang.reflect.Method;
-import java.util.function.Consumer;
-
+import com.mojang.blaze3d.textures.GpuTextureView;
 import net.montoyo.wd.utilities.Log;
 
-/**
- * Reflection-based helper for MCEF integration.
- * No compile-time dependency on MCEF classes.
- */
+import java.awt.Canvas;
+import java.awt.Component;
+import java.awt.event.InputEvent;
+import java.awt.event.KeyEvent;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseWheelEvent;
+import java.lang.reflect.Method;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
+/**
+ * Reflection-based bridge to MCEF Modern (net.dimaskama.mcef).
+ *
+ * <p>MCEF stays an optional dependency: nothing here is referenced at compile time except
+ * vanilla Blaze3D types, so the mod loads and runs (with blank screens) when MCEF is absent.
+ *
+ * <p>Browser input is driven through the underlying JCEF {@code CefBrowser} using AWT events
+ * rather than MCEF Modern's {@code MCEFBrowser} event methods, because WebDisplays synthesises
+ * its own events from world-space raycasts instead of forwarding real GUI input.
+ */
 public class MCEFHelper {
+    private static final String API_CLASS = "net.dimaskama.mcef.api.MCEFApi";
+
     private static boolean available = false;
     private static boolean checked = false;
+    private static volatile Object api = null;
+    private static volatile boolean initFailed = false;
+
     private static final ConcurrentHashMap<String, Method> methodCache = new ConcurrentHashMap<>();
+    /** Dummy AWT source component for synthesised events; JCEF's off-screen browser ignores it. */
+    private static final Component EVENT_SOURCE = new Canvas();
 
     public static boolean isMCEFAvailable() {
         if (!checked) {
             checked = true;
             try {
-                Class.forName("com.cinemamod.mcef.MCEF");
+                Class.forName(API_CLASS);
                 available = true;
-                Log.info("MCEF classes found");
-            } catch (Exception e) {
+                Log.info("MCEF Modern classes found");
+            } catch (Throwable e) {
                 available = false;
-                Log.info("MCEF not available: {}", e.getMessage());
+                Log.info("MCEF Modern not available: {}", e.getMessage());
             }
         }
         return available;
     }
 
     public static boolean isMCEFInitialized() {
-        if (!isMCEFAvailable()) return false;
-        try {
-            Class<?> mcefClass = Class.forName("com.cinemamod.mcef.MCEF");
-            Method initMethod = mcefClass.getMethod("isInitialized");
-            return (boolean) initMethod.invoke(null);
-        } catch (Exception e) {
-            return false;
-        }
+        return api != null;
     }
 
+    /**
+     * Kicks off MCEF's asynchronous initialisation and reports the outcome to {@code callback}.
+     * The callback runs on whichever thread completes the future.
+     */
+    @SuppressWarnings("unchecked")
     public static void scheduleInit(Consumer<Boolean> callback) {
+        if (!isMCEFAvailable()) {
+            callback.accept(false);
+            return;
+        }
         try {
-            if (!isMCEFAvailable()) {
-                callback.accept(false);
-                return;
-            }
-            Class<?> mcefClass = Class.forName("com.cinemamod.mcef.MCEF");
-            Class<?> listenerClass = Class.forName("com.cinemamod.mcef.listeners.MCEFInitListener");
-            Method scheduleMethod = mcefClass.getMethod("scheduleForInit", listenerClass);
-            Object listener = java.lang.reflect.Proxy.newProxyInstance(
-                    listenerClass.getClassLoader(),
-                    new Class[]{listenerClass},
-                    (proxy, method, args) -> {
-                        if ("onInit".equals(method.getName())) {
-                            callback.accept((boolean) args[0]);
-                        }
-                        return null;
-                    });
-            scheduleMethod.invoke(null, listener);
-        } catch (Exception e) {
+            Class<?> apiClass = Class.forName(API_CLASS);
+            Method getFuture = apiClass.getMethod("getInstanceFuture");
+            CompletableFuture<Object> future = (CompletableFuture<Object>) getFuture.invoke(null);
+            future.whenComplete((instance, error) -> {
+                if (error != null || instance == null) {
+                    initFailed = true;
+                    Log.warning("MCEF initialization failed: {}", error != null ? error.getMessage() : "no instance");
+                    callback.accept(false);
+                } else {
+                    api = instance;
+                    callback.accept(true);
+                }
+            });
+        } catch (Throwable e) {
+            initFailed = true;
             Log.warning("Failed to schedule MCEF init: {}", e.getMessage());
             callback.accept(false);
         }
     }
 
+    public static boolean isInitFailed() {
+        return initFailed;
+    }
+
     public static Object createBrowser(String url, boolean transparent, int width, int height) {
+        Object instance = api;
+        if (instance == null) return null;
         try {
-            Class<?> mcefClass = Class.forName("com.cinemamod.mcef.MCEF");
-            Method createMethod = mcefClass.getMethod("createBrowser", String.class, boolean.class, int.class, int.class);
-            Object browser = createMethod.invoke(null, url, transparent, width, height);
+            Method create = findCachedMethod(instance.getClass(), "createBrowser", String.class, boolean.class);
+            if (create == null) return null;
+            Object browser = create.invoke(instance, url, transparent);
             if (browser != null) {
-                disableMCEFCursor(browser);
-                resetPixelStoreAfterPaint(browser);
+                // MCEF Modern requires resize() to be called right after creation.
+                resizeBrowser(browser, width, height);
             }
             return browser;
-        } catch (Exception e) {
+        } catch (Throwable e) {
             Log.warning("Failed to create browser: {}", e.getMessage());
             return null;
         }
     }
 
-    /**
-     * Set a no-op cursor change listener to prevent MCEF from changing the system cursor.
-     * The webdisplays mod handles its own cursor display.
-     */
-    public static void disableMCEFCursor(Object browser) {
+    public static void resizeBrowser(Object browser, int width, int height) {
+        invokeVoid(browser, "resize", new Class[]{int.class, int.class}, width, height);
+    }
+
+    public static void closeBrowser(Object browser) {
+        if (browser == null) return;
+        // Stop any playing media before tearing the browser down.
+        injectJavascript(browser, "(function(){try{document.querySelectorAll('video,audio')"
+                + ".forEach(function(e){e.pause();e.muted=true;e.src='';e.load()})}catch(e){}})()");
+        invokeVoid(browser, "close", new Class[]{});
+    }
+
+    public static void setFocus(Object browser, boolean focused) {
+        invokeVoid(browser, "setFocus", new Class[]{boolean.class}, focused);
+    }
+
+    /** Returns the GPU texture view holding the browser's current frame, or null if not ready. */
+    public static GpuTextureView getBrowserTextureView(Object browser) {
+        if (browser == null) return null;
         try {
-            Class<?> listenerClass = Class.forName("com.cinemamod.mcef.listeners.MCEFCursorChangeListener");
-            Method setListenerMethod = findCachedMethod(browser.getClass(), "setCursorChangeListener", listenerClass);
-            if (setListenerMethod != null) {
-                Object noOpListener = java.lang.reflect.Proxy.newProxyInstance(
-                        listenerClass.getClassLoader(),
-                        new Class[]{listenerClass},
-                        (proxy, method, args) -> null  // no-op: don't change system cursor
-                );
-                setListenerMethod.invoke(browser, noOpListener);
-            }
-        } catch (Exception e) {
-            Log.warning("Failed to disable MCEF cursor: {}", e.getMessage());
+            Method m = findCachedMethod(browser.getClass(), "getTextureView");
+            if (m == null) return null;
+            Object view = m.invoke(browser);
+            return (view instanceof GpuTextureView tv) ? tv : null;
+        } catch (Throwable e) {
+            return null;
         }
     }
 
-    /**
-     * Wrap the browser's onPaint to reset GL pixel store state after texture updates.
-     * MCEF sets GL_UNPACK_ROW_LENGTH/SKIP_PIXELS/SKIP_ROWS for partial updates
-     * but never resets them, which corrupts Minecraft's subsequent texture loading.
-     */
-    public static void resetPixelStoreAfterPaint(Object browser) {
+    // === JCEF passthrough ===
+
+    private static Object cefBrowser(Object browser) {
+        if (browser == null) return null;
         try {
-            // We use a mixin approach - see MCEFStateCleanupMixin
-        } catch (Exception e) {
-            // Ignore
+            Method m = findCachedMethod(browser.getClass(), "getCefBrowser");
+            return m != null ? m.invoke(browser) : null;
+        } catch (Throwable e) {
+            return null;
         }
     }
 
     public static void loadBrowserUrl(Object browser, String url) {
-        try {
-            Method loadURLMethod = findMethod(browser.getClass(), "loadURL", String.class);
-            if (loadURLMethod != null) {
-                loadURLMethod.invoke(browser, url);
-            }
-        } catch (Exception e) {
-            Log.warning("Failed to load URL: {}", e.getMessage());
-        }
+        Object cef = cefBrowser(browser);
+        invokeVoid(cef, "loadURL", new Class[]{String.class}, url);
     }
 
     public static String getBrowserUrl(Object browser) {
+        Object cef = cefBrowser(browser);
+        if (cef == null) return "";
         try {
-            Method getURLM = findCachedMethod(browser.getClass(), "getURL");
-            if (getURLM != null) {
-                Object result = getURLM.invoke(browser);
-                return result != null ? result.toString() : "";
-            }
-        } catch (Exception e) {
-        }
-        return "";
-    }
-
-    public static void closeBrowser(Object browser) {
-        try {
-            Method execJSMethod = findCachedMethod(browser.getClass(), "executeJavaScript", String.class, String.class, int.class);
-            if (execJSMethod != null) {
-                execJSMethod.invoke(browser,
-                    "try{document.querySelectorAll('video,audio').forEach(function(e){e.pause();e.muted=true;e.src='';e.load()});" +
-                    "if(window.__wdAudioCtx)window.__wdAudioCtx.close();" +
-                    "window.__wdAudioCtx=null;" +
-                    "var OrigAC=window.AudioContext||window.webkitAudioContext;" +
-                    "if(OrigAC){window.AudioContext=function(){var c=new OrigAC();c.close();return c}}}" +
-                    "catch(e){}",
-                    "", 0);
-            }
-        } catch (Exception e) {
-        }
-        try {
-            injectJavascript(browser, "(function(){try{document.querySelectorAll('video,audio').forEach(function(e){e.pause();e.muted=true;e.src='';e.load()});if(window.__wdAudioCtx)window.__wdAudioCtx.close();}catch(e){}})()");
-        } catch (Exception e) {
-        }
-        try {
-            loadBrowserUrl(browser, "about:blank");
-        } catch (Exception e) {
-        }
-        try {
-            Method closeMethod = browser.getClass().getMethod("close");
-            closeMethod.invoke(browser);
-        } catch (Exception e) {
-            Log.warning("Failed to close browser: {}", e.getMessage());
+            Method m = findCachedMethod(cef.getClass(), "getURL");
+            if (m == null) return "";
+            Object url = m.invoke(cef);
+            return url != null ? url.toString() : "";
+        } catch (Throwable e) {
+            return "";
         }
     }
 
-    public static void resizeBrowser(Object browser, int width, int height) {
-        try {
-            Method resizeMethod = browser.getClass().getMethod("resize", int.class, int.class);
-            resizeMethod.invoke(browser, width, height);
-        } catch (Exception e) {
-            Log.warning("Failed to resize browser: {}", e.getMessage());
-        }
+    public static void injectJavascript(Object browser, String code) {
+        Object cef = cefBrowser(browser);
+        invokeVoid(cef, "executeJavaScript", new Class[]{String.class, String.class, int.class}, code, "", 0);
+    }
+
+    // === Synthesised input ===
+
+    private static void sendMouseEvent(Object browser, MouseEvent event) {
+        Object cef = cefBrowser(browser);
+        invokeVoid(cef, "sendMouseEvent", new Class[]{MouseEvent.class}, event);
     }
 
     public static void sendMouseClick(Object browser, int x, int y, int button, boolean release, int clickCount) {
-        try {
-            if (release) {
-                Method releaseMethod = findCachedMethod(browser.getClass(), "sendMouseRelease", int.class, int.class, int.class);
-                if (releaseMethod != null) releaseMethod.invoke(browser, x, y, button);
-            } else {
-                Method pressMethod = findCachedMethod(browser.getClass(), "sendMousePress", int.class, int.class, int.class);
-                if (pressMethod != null) pressMethod.invoke(browser, x, y, button);
-            }
-        } catch (Exception e) {
-            Log.warning("Failed to send mouse click: {}", e.getMessage());
-        }
+        int awtButton = switch (button) {
+            case 1 -> MouseEvent.BUTTON2; // middle
+            case 2 -> MouseEvent.BUTTON3; // right
+            default -> MouseEvent.BUTTON1;
+        };
+        sendMouseEvent(browser, new MouseEvent(EVENT_SOURCE,
+                release ? MouseEvent.MOUSE_RELEASED : MouseEvent.MOUSE_PRESSED,
+                System.currentTimeMillis(), 0, x, y, Math.max(1, clickCount), false, awtButton));
     }
 
     public static void sendMouseMove(Object browser, int x, int y, boolean leave) {
-        try {
-            Method moveMethod = findCachedMethod(browser.getClass(), "sendMouseMove", int.class, int.class);
-            if (moveMethod != null) moveMethod.invoke(browser, x, y);
-        } catch (Exception e) {
-            Log.warning("Failed to send mouse move: {}", e.getMessage());
-        }
+        sendMouseEvent(browser, new MouseEvent(EVENT_SOURCE,
+                leave ? MouseEvent.MOUSE_EXITED : MouseEvent.MOUSE_MOVED,
+                System.currentTimeMillis(), 0, x, y, 0, false, MouseEvent.NOBUTTON));
     }
 
+    public static void sendMouseWheel(Object browser, int x, int y, double amount, int modifiers) {
+        Object cef = cefBrowser(browser);
+        MouseWheelEvent event = new MouseWheelEvent(EVENT_SOURCE, MouseWheelEvent.MOUSE_WHEEL,
+                System.currentTimeMillis(), modifiers, x, y, 0, false,
+                MouseWheelEvent.WHEEL_UNIT_SCROLL, 100, (int) Math.signum(amount));
+        invokeVoid(cef, "sendMouseWheelEvent", new Class[]{MouseWheelEvent.class}, event);
+    }
+
+    private static void sendKeyEvent(Object browser, KeyEvent event) {
+        Object cef = cefBrowser(browser);
+        invokeVoid(cef, "sendKeyEvent", new Class[]{KeyEvent.class}, event);
+    }
+
+    /** Sends a typed character (KEY_TYPED), which is what text fields consume. */
     public static void sendKeyEvent(Object browser, char c) {
-        try {
-            Method keyMethod = findCachedMethod(browser.getClass(), "sendKeyTyped", char.class, int.class);
-            if (keyMethod != null) keyMethod.invoke(browser, c, 0);
-        } catch (Exception e) {
-            Log.warning("Failed to send key event: {}", e.getMessage());
-        }
+        sendKeyEvent(browser, new KeyEvent(EVENT_SOURCE, KeyEvent.KEY_TYPED,
+                System.currentTimeMillis(), 0, KeyEvent.VK_UNDEFINED, c));
     }
 
-    public static void sendKeyPress(Object browser, int keyCode, long scanCode, int modifiers) {
-        try {
-            int vkCode = glfwToVk(keyCode);
-            Method method = findCachedMethod(browser.getClass(), "sendKeyPress", int.class, long.class, int.class);
-            if (method != null) method.invoke(browser, vkCode, scanCode, modifiers);
-        } catch (Exception e) {
-        }
+    public static void sendKeyPress(Object browser, int glfwKeyCode, long scanCode, int glfwModifiers) {
+        int vk = glfwToAwtKeyCode(glfwKeyCode);
+        sendKeyEvent(browser, new KeyEvent(EVENT_SOURCE, KeyEvent.KEY_PRESSED,
+                System.currentTimeMillis(), glfwToAwtModifiers(glfwModifiers), vk, (char) vk));
     }
 
-    public static void sendKeyRelease(Object browser, int keyCode, long scanCode, int modifiers) {
-        try {
-            int vkCode = glfwToVk(keyCode);
-            Method method = findCachedMethod(browser.getClass(), "sendKeyRelease", int.class, long.class, int.class);
-            if (method != null) method.invoke(browser, vkCode, scanCode, modifiers);
-        } catch (Exception e) {
-        }
+    public static void sendKeyRelease(Object browser, int glfwKeyCode, long scanCode, int glfwModifiers) {
+        int vk = glfwToAwtKeyCode(glfwKeyCode);
+        sendKeyEvent(browser, new KeyEvent(EVENT_SOURCE, KeyEvent.KEY_RELEASED,
+                System.currentTimeMillis(), glfwToAwtModifiers(glfwModifiers), vk, (char) vk));
     }
 
-    private static int glfwToVk(int keyCode) {
-        if (keyCode >= 65 && keyCode <= 90) return keyCode;
-        if (keyCode >= 48 && keyCode <= 57) return keyCode;
-        if (keyCode >= 290 && keyCode <= 301) return keyCode - 290 + 112;
+    private static int glfwToAwtModifiers(int glfwModifiers) {
+        int awt = 0;
+        if ((glfwModifiers & 0x0001) != 0) awt |= InputEvent.SHIFT_DOWN_MASK;
+        if ((glfwModifiers & 0x0002) != 0) awt |= InputEvent.CTRL_DOWN_MASK;
+        if ((glfwModifiers & 0x0004) != 0) awt |= InputEvent.ALT_DOWN_MASK;
+        if ((glfwModifiers & 0x0008) != 0) awt |= InputEvent.META_DOWN_MASK;
+        return awt;
+    }
+
+    private static int glfwToAwtKeyCode(int keyCode) {
+        if (keyCode >= 65 && keyCode <= 90) return keyCode;   // A-Z
+        if (keyCode >= 48 && keyCode <= 57) return keyCode;   // 0-9
+        if (keyCode >= 290 && keyCode <= 301) return keyCode - 290 + KeyEvent.VK_F1;
         return switch (keyCode) {
-            case 256 -> 27;
-            case 257 -> 13;
-            case 258 -> 9;
-            case 259 -> 8;
-            case 260 -> 45;
-            case 261 -> 127;
-            case 262 -> 39;
-            case 263 -> 37;
-            case 264 -> 40;
-            case 265 -> 38;
-            case 266 -> 33;
-            case 267 -> 34;
-            case 268 -> 36;
-            case 269 -> 35;
-            case 340 -> 16;
-            case 341 -> 17;
-            case 342 -> 18;
-            case 344 -> 20;
-            case 32 -> 32;
-            case 39 -> 222;
-            case 44 -> 188;
-            case 45 -> 189;
-            case 46 -> 190;
-            case 47 -> 191;
-            case 59 -> 186;
-            case 61 -> 187;
-            case 91 -> 219;
-            case 92 -> 220;
-            case 93 -> 221;
-            case 96 -> 192;
+            case 256 -> KeyEvent.VK_ESCAPE;
+            case 257 -> KeyEvent.VK_ENTER;
+            case 258 -> KeyEvent.VK_TAB;
+            case 259 -> KeyEvent.VK_BACK_SPACE;
+            case 260 -> KeyEvent.VK_INSERT;
+            case 261 -> KeyEvent.VK_DELETE;
+            case 262 -> KeyEvent.VK_RIGHT;
+            case 263 -> KeyEvent.VK_LEFT;
+            case 264 -> KeyEvent.VK_DOWN;
+            case 265 -> KeyEvent.VK_UP;
+            case 266 -> KeyEvent.VK_PAGE_UP;
+            case 267 -> KeyEvent.VK_PAGE_DOWN;
+            case 268 -> KeyEvent.VK_HOME;
+            case 269 -> KeyEvent.VK_END;
+            case 340 -> KeyEvent.VK_SHIFT;
+            case 341 -> KeyEvent.VK_CONTROL;
+            case 342 -> KeyEvent.VK_ALT;
+            case 344 -> KeyEvent.VK_CAPS_LOCK;
+            case 32 -> KeyEvent.VK_SPACE;
+            case 39 -> KeyEvent.VK_QUOTE;
+            case 44 -> KeyEvent.VK_COMMA;
+            case 45 -> KeyEvent.VK_MINUS;
+            case 46 -> KeyEvent.VK_PERIOD;
+            case 47 -> KeyEvent.VK_SLASH;
+            case 59 -> KeyEvent.VK_SEMICOLON;
+            case 61 -> KeyEvent.VK_EQUALS;
+            case 91 -> KeyEvent.VK_OPEN_BRACKET;
+            case 92 -> KeyEvent.VK_BACK_SLASH;
+            case 93 -> KeyEvent.VK_CLOSE_BRACKET;
+            case 96 -> KeyEvent.VK_BACK_QUOTE;
             default -> keyCode;
         };
     }
 
-    public static void sendMouseWheel(Object browser, int x, int y, double amount, int modifiers) {
-        try {
-            Method wheelMethod = findCachedMethod(browser.getClass(), "sendMouseWheel", int.class, int.class, double.class, int.class);
-            if (wheelMethod != null) wheelMethod.invoke(browser, x, y, amount, modifiers);
-        } catch (Exception e) {
-            Log.warning("Failed to send mouse wheel: {}", e.getMessage());
-        }
-    }
+    // === Reflection plumbing ===
 
-    public static int getBrowserTextureId(Object browser) {
+    private static void invokeVoid(Object target, String name, Class<?>[] paramTypes, Object... args) {
+        if (target == null) return;
         try {
-            Method getRendererMethod = findCachedMethod(browser.getClass(), "getRenderer");
-            if (getRendererMethod == null) return 0;
-            Object renderer = getRendererMethod.invoke(browser);
-            if (renderer != null) {
-                Method getTextureIDMethod = findCachedMethod(renderer.getClass(), "getTextureID");
-                if (getTextureIDMethod != null) return (int) getTextureIDMethod.invoke(renderer);
-            }
-        } catch (Exception e) {
-        }
-        return 0;
-    }
-
-    public static void injectJavascript(Object browser, String code) {
-        try {
-            Method execJSMethod = findCachedMethod(browser.getClass(), "executeJavaScript", String.class, String.class, int.class);
-            if (execJSMethod != null) {
-                execJSMethod.invoke(browser, code, "", 0);
-                return;
-            }
-        } catch (Exception e) {
-        }
-        try {
-            Method execJSMethod = findCachedMethod(browser.getClass(), "executeJavaScript", String.class);
-            if (execJSMethod != null) {
-                execJSMethod.invoke(browser, code);
-            }
-        } catch (Exception e) {
+            Method m = findCachedMethod(target.getClass(), name, paramTypes);
+            if (m != null) m.invoke(target, args);
+        } catch (Throwable e) {
+            Log.warning("MCEF call {} failed: {}", name, e.getMessage());
         }
     }
 
@@ -328,6 +305,13 @@ public class MCEFHelper {
             try {
                 return current.getDeclaredMethod(name, paramTypes);
             } catch (NoSuchMethodException e) {
+                for (Class<?> iface : current.getInterfaces()) {
+                    try {
+                        return iface.getMethod(name, paramTypes);
+                    } catch (NoSuchMethodException ignored) {
+                        // keep looking
+                    }
+                }
                 current = current.getSuperclass();
             }
         }

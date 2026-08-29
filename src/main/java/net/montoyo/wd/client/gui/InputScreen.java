@@ -1,8 +1,12 @@
 package net.montoyo.wd.client.gui;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.CharacterEvent;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.montoyo.wd.client.ScreenCursorTracker;
@@ -24,15 +28,15 @@ public class InputScreen extends Screen {
     }
 
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (keyCode == 256) {
+    public boolean keyPressed(KeyEvent event) {
+        if (event.key() == InputConstants.KEY_ESCAPE) {
             onClose();
             return true;
         }
         Object browser = getBrowser();
         if (browser != null) {
-            MCEFHelper.sendKeyPress(browser, keyCode, scanCode, modifiers);
-            if (keyCode == 259 && inputBuffer.length() > 0) {
+            MCEFHelper.sendKeyPress(browser, event.key(), 0, event.modifiers());
+            if (event.key() == InputConstants.KEY_BACKSPACE && inputBuffer.length() > 0) {
                 inputBuffer.setLength(inputBuffer.length() - 1);
             }
         }
@@ -40,49 +44,49 @@ public class InputScreen extends Screen {
     }
 
     @Override
-    public boolean keyReleased(int keyCode, int scanCode, int modifiers) {
+    public boolean keyReleased(KeyEvent event) {
         Object browser = getBrowser();
         if (browser != null) {
-            MCEFHelper.sendKeyRelease(browser, keyCode, scanCode, modifiers);
+            MCEFHelper.sendKeyRelease(browser, event.key(), 0, event.modifiers());
         }
         return true;
     }
 
     @Override
-    public boolean charTyped(char codePoint, int modifiers) {
+    public boolean charTyped(CharacterEvent event) {
         Object browser = getBrowser();
+        int codePoint = event.codepoint();
         if (browser != null) {
-            MCEFHelper.sendKeyEvent(browser, codePoint);
+            MCEFHelper.sendKeyEvent(browser, (char) codePoint);
         }
         if (codePoint >= 32 && codePoint != 127) {
-            inputBuffer.append(codePoint);
-        } else if (codePoint == 8 && inputBuffer.length() > 0) {
-            inputBuffer.deleteCharAt(inputBuffer.length() - 1);
+            inputBuffer.appendCodePoint(codePoint);
         }
         return true;
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
         ScreenCursorTracker.CursorInfo cursor = ScreenCursorTracker.getCurrentCursor();
         if (cursor != null && cursor.screenData != null && cursor.screenData.browser != null) {
-            long now = System.currentTimeMillis();
-            int clickCount = (now - cursor.screenData.lastClickTime < 500) ? 2 : 1;
-            cursor.screenData.lastClickTime = now;
-            MCEFHelper.sendMouseClick(cursor.screenData.browser, cursor.pixelX, cursor.pixelY, button, false, clickCount);
-            MCEFHelper.sendMouseClick(cursor.screenData.browser, cursor.pixelX, cursor.pixelY, button, true, clickCount);
+            int clickCount = doubled ? 2 : 1;
+            cursor.screenData.lastClickTime = System.currentTimeMillis();
+            MCEFHelper.sendMouseClick(cursor.screenData.browser, cursor.pixelX, cursor.pixelY, event.button(), false, clickCount);
+            MCEFHelper.sendMouseClick(cursor.screenData.browser, cursor.pixelX, cursor.pixelY, event.button(), true, clickCount);
         }
         return true;
     }
 
     @Override
-    public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        renderBackground(guiGraphics, mouseX, mouseY, partialTick);
+    public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+        this.extractBackground(graphics, mouseX, mouseY, partialTick);
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick);
+
         String display = inputBuffer.toString();
         if (display.length() > 40) display = "..." + display.substring(display.length() - 37);
         if (display.isEmpty()) display = " ";
-        guiGraphics.drawString(this.font, "> " + display + " _", 8, 8, 0xFFFFFF, true);
-        guiGraphics.drawString(this.font, "ESC to exit", 8, 20, 0x888888, true);
+        graphics.text(this.font, "> " + display + " _", 8, 8, 0xFFFFFFFF, true);
+        graphics.text(this.font, "ESC to exit", 8, 20, 0xFF888888, true);
     }
 
     @Override

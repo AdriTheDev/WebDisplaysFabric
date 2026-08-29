@@ -26,9 +26,8 @@ public class ItemLinker extends Item {
     public static void onRightClickScreen(Player player, BlockPos screenPos, BlockSide side) {
         UUID playerUUID = player.getUUID();
         linkedScreens.put(playerUUID, new LinkData(screenPos, side));
-        player.displayClientMessage(
-                net.minecraft.network.chat.Component.literal("Screen selected at " + screenPos.toShortString()),
-                true);
+        player.sendOverlayMessage(
+                net.minecraft.network.chat.Component.literal("Screen selected at " + screenPos.toShortString()));
     }
 
     public static BlockPos getLinkedScreen(Player player) {

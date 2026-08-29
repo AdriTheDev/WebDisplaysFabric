@@ -1,204 +1,254 @@
 package net.montoyo.wd.client;
 
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.BufferBuilder;
-import com.mojang.blaze3d.vertex.BufferUploader;
-import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.Tesselator;
-import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.GameRenderer;
-import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
+import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
+import net.minecraft.client.renderer.state.level.CameraRenderState;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.state.BlockState;
-import net.montoyo.wd.client.mcef.MCEFHelper;
+import net.minecraft.world.phys.Vec3;
 import net.montoyo.wd.entity.ScreenBlockEntity;
 import net.montoyo.wd.entity.ScreenData;
 import net.montoyo.wd.utilities.data.BlockSide;
 import net.montoyo.wd.utilities.data.Rotation;
-import org.joml.Matrix4f;
+import org.jetbrains.annotations.Nullable;
 
-public class ScreenRenderer implements BlockEntityRenderer<ScreenBlockEntity> {
+public class ScreenRenderer implements BlockEntityRenderer<ScreenBlockEntity, ScreenRenderState> {
+
+    /** Screens are self-lit, so they are drawn at full brightness rather than by world light. */
+    private static final int FULL_BRIGHT = 0xF000F0;
+    /** Pushes the quad just off the block face so it does not z-fight with the block itself. */
+    private static final float SURFACE_OFFSET = 0.001f;
 
     public ScreenRenderer(BlockEntityRendererProvider.Context context) {
     }
 
     @Override
-    public void render(ScreenBlockEntity blockEntity, float partialTick, PoseStack poseStack,
-                        MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
-        if (!MCEFHelper.isMCEFAvailable()) return;
-        if (!ClientInit.isMCEFRenderingEnabled()) return;
+    public ScreenRenderState createRenderState() {
+        return new ScreenRenderState();
+    }
+
+    @Override
+    public void extractRenderState(ScreenBlockEntity blockEntity, ScreenRenderState state, float partialTick,
+                                   Vec3 cameraPos, @Nullable ModelFeatureRenderer.CrumblingOverlay crumblingOverlay) {
+        BlockEntityRenderer.super.extractRenderState(blockEntity, state, partialTick, cameraPos, crumblingOverlay);
+
+        state.faces.clear();
+        state.hasCursor = false;
+
+        if (!MCEFHelperAvailable() || !ClientInit.isMCEFRenderingEnabled()) {
+            return;
+        }
+
+        BlockPos pos = blockEntity.getBlockPos();
 
         for (int i = 0; i < blockEntity.screenCount(); i++) {
             ScreenData screen = blockEntity.getScreen(i);
             if (screen == null || screen.browser == null) continue;
+            if (isBlockedByOpaque(pos, screen)) continue;
 
-            int texId = MCEFHelper.getBrowserTextureId(screen.browser);
-            if (texId <= 0) continue;
+            Identifier texture = BrowserTextureBridge.textureIdFor(screen.browser, BrowserTextureBridge.keyFor(pos, screen.side));
+            if (texture == null) continue;
 
-            if (isBlockedByOpaque(blockEntity, screen)) continue;
+            ScreenRenderState.Face face = new ScreenRenderState.Face();
+            face.side = screen.side;
+            face.rotation = screen.rotation;
+            face.texture = texture;
+            face.width = screen.size.x;
+            face.height = screen.size.y;
+            face.resolutionX = screen.resolution.x;
+            face.resolutionY = screen.resolution.y;
+            state.faces.add(face);
+        }
 
-            renderScreen(blockEntity, screen, texId, poseStack);
+        ScreenCursorTracker.CursorInfo cursor = ScreenCursorTracker.getCurrentCursor();
+        if (ScreenCursorTracker.isCursorVisible() && cursor != null && cursor.pos.equals(pos)) {
+            state.hasCursor = true;
+            state.cursorSide = cursor.side;
+            state.cursorX = (float) cursor.localX;
+            state.cursorY = (float) cursor.localY;
+            state.cursorZ = (float) cursor.localZ;
         }
     }
 
-    private boolean isBlockedByOpaque(ScreenBlockEntity blockEntity, ScreenData screen) {
-        BlockPos bp = blockEntity.getBlockPos();
-        Direction dir = screen.side.direction;
-        BlockPos adjacent = bp.relative(dir);
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null) return false;
-        BlockState state = mc.level.getBlockState(adjacent);
-        return state.isSolid();
+    @Override
+    public void submit(ScreenRenderState state, PoseStack poseStack, SubmitNodeCollector collector,
+                       CameraRenderState cameraState) {
+        for (ScreenRenderState.Face face : state.faces) {
+            submitFace(face, poseStack, collector);
+        }
+
+        if (state.hasCursor) {
+            submitCursor(state, poseStack, collector);
+        }
     }
 
-    private void renderScreen(ScreenBlockEntity blockEntity, ScreenData screen, int texId, PoseStack poseStack) {
-        BlockSide side = screen.side;
-        Rotation rot = screen.rotation;
+    private void submitFace(ScreenRenderState.Face face, PoseStack poseStack, SubmitNodeCollector collector) {
+        float[] uv = computeUvs(face);
 
-        float w = screen.size.x;
-        float h = screen.size.y;
+        poseStack.pushPose();
+        translateToSurface(poseStack, face.side);
 
-        // "Cover" mode: zoom the browser content to fill the entire screen surface
-        float screenAspect = w / h;
-        float browserAspect = (float) screen.resolution.x / (float) screen.resolution.y;
+        collector.submitCustomGeometry(poseStack, RenderTypes.entityCutout(face.texture),
+                (pose, consumer) -> writeQuad(pose, consumer, face, uv));
 
-        float uvU0 = 0f, uvV0 = 0f, uvU1 = 1f, uvV1 = 1f;
+        poseStack.popPose();
+    }
+
+    /**
+     * Computes UVs that "cover" the screen surface: the browser image is cropped rather than
+     * stretched when its aspect ratio differs from the screen's, then rotated to taste.
+     */
+    private static float[] computeUvs(ScreenRenderState.Face face) {
+        float screenAspect = face.width / face.height;
+        float browserAspect = (float) face.resolutionX / (float) face.resolutionY;
+
+        float u0 = 0f, v0 = 0f, u1 = 1f, v1 = 1f;
 
         if (screenAspect > browserAspect) {
             float ratio = screenAspect / browserAspect;
             float offset = (1.0f - 1.0f / ratio) / 2.0f;
-            uvU0 = offset;
-            uvU1 = 1.0f - offset;
+            u0 = offset;
+            u1 = 1.0f - offset;
         } else if (screenAspect < browserAspect) {
             float ratio = browserAspect / screenAspect;
             float offset = (1.0f - 1.0f / ratio) / 2.0f;
-            uvV0 = offset;
-            uvV1 = 1.0f - offset;
+            v0 = offset;
+            v1 = 1.0f - offset;
         }
 
-        float u0 = uvU0, v0 = uvV0, u1 = uvU1, v1 = uvV1;
-        switch (rot) {
-            case ROT_90 -> { u0 = uvU1; v0 = uvV0; u1 = uvU0; v1 = uvV1; }
-            case ROT_180 -> { u0 = uvU1; v0 = uvV1; u1 = uvU0; v1 = uvV0; }
-            case ROT_270 -> { u0 = uvU0; v0 = uvV1; u1 = uvU1; v1 = uvV0; }
-        }
+        return switch (face.rotation) {
+            case ROT_90 -> new float[]{u1, v0, u0, v1};
+            case ROT_180 -> new float[]{u1, v1, u0, v0};
+            case ROT_270 -> new float[]{u0, v1, u1, v0};
+            default -> new float[]{u0, v0, u1, v1};
+        };
+    }
 
-        float eps = 0.001f;
-
-        poseStack.pushPose();
-
+    private static void translateToSurface(PoseStack poseStack, BlockSide side) {
         switch (side) {
-            case BOTTOM -> poseStack.translate(0, -eps, 0);
-            case TOP -> poseStack.translate(0, 1.0 + eps, 0);
-            case NORTH -> poseStack.translate(0, 0, -eps);
-            case SOUTH -> poseStack.translate(0, 0, 1.0 + eps);
-            case WEST -> poseStack.translate(-eps, 0, 0);
-            case EAST -> poseStack.translate(1.0 + eps, 0, 0);
+            case BOTTOM -> poseStack.translate(0, -SURFACE_OFFSET, 0);
+            case TOP -> poseStack.translate(0, 1.0 + SURFACE_OFFSET, 0);
+            case NORTH -> poseStack.translate(0, 0, -SURFACE_OFFSET);
+            case SOUTH -> poseStack.translate(0, 0, 1.0 + SURFACE_OFFSET);
+            case WEST -> poseStack.translate(-SURFACE_OFFSET, 0, 0);
+            case EAST -> poseStack.translate(1.0 + SURFACE_OFFSET, 0, 0);
         }
+    }
 
-        Matrix4f matrix = poseStack.last().pose();
+    private static void writeQuad(PoseStack.Pose pose, VertexConsumer consumer,
+                                  ScreenRenderState.Face face, float[] uv) {
+        float u0 = uv[0], v0 = uv[1], u1 = uv[2], v1 = uv[3];
+        float w = face.width;
+        float h = face.height;
 
-        // Match Forge exactly: use POSITION_TEX_COLOR format with explicit white color per vertex
-        RenderSystem.enableDepthTest();
-        RenderSystem.setShader(GameRenderer::getPositionTexColorShader);
-        RenderSystem.setShaderTexture(0, texId);
-        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+        Direction normal = face.side.direction;
 
-        BufferBuilder builder = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
-
-        switch (side) {
+        switch (face.side) {
             case NORTH -> {
-                builder.addVertex(matrix, 0, 0, 0).setUv(u1, v1).setColor(1f, 1f, 1f, 1f);
-                builder.addVertex(matrix, 0, h, 0).setUv(u1, v0).setColor(1f, 1f, 1f, 1f);
-                builder.addVertex(matrix, w, h, 0).setUv(u0, v0).setColor(1f, 1f, 1f, 1f);
-                builder.addVertex(matrix, w, 0, 0).setUv(u0, v1).setColor(1f, 1f, 1f, 1f);
+                vertex(pose, consumer, 0, 0, 0, u1, v1, normal);
+                vertex(pose, consumer, 0, h, 0, u1, v0, normal);
+                vertex(pose, consumer, w, h, 0, u0, v0, normal);
+                vertex(pose, consumer, w, 0, 0, u0, v1, normal);
             }
             case SOUTH -> {
-                builder.addVertex(matrix, w, 0, 0).setUv(u1, v1).setColor(1f, 1f, 1f, 1f);
-                builder.addVertex(matrix, w, h, 0).setUv(u1, v0).setColor(1f, 1f, 1f, 1f);
-                builder.addVertex(matrix, 0, h, 0).setUv(u0, v0).setColor(1f, 1f, 1f, 1f);
-                builder.addVertex(matrix, 0, 0, 0).setUv(u0, v1).setColor(1f, 1f, 1f, 1f);
+                vertex(pose, consumer, w, 0, 0, u1, v1, normal);
+                vertex(pose, consumer, w, h, 0, u1, v0, normal);
+                vertex(pose, consumer, 0, h, 0, u0, v0, normal);
+                vertex(pose, consumer, 0, 0, 0, u0, v1, normal);
             }
             case WEST -> {
-                builder.addVertex(matrix, 0, 0, 0).setUv(u0, v1).setColor(1f, 1f, 1f, 1f);
-                builder.addVertex(matrix, 0, 0, w).setUv(u1, v1).setColor(1f, 1f, 1f, 1f);
-                builder.addVertex(matrix, 0, h, w).setUv(u1, v0).setColor(1f, 1f, 1f, 1f);
-                builder.addVertex(matrix, 0, h, 0).setUv(u0, v0).setColor(1f, 1f, 1f, 1f);
+                vertex(pose, consumer, 0, 0, 0, u0, v1, normal);
+                vertex(pose, consumer, 0, 0, w, u1, v1, normal);
+                vertex(pose, consumer, 0, h, w, u1, v0, normal);
+                vertex(pose, consumer, 0, h, 0, u0, v0, normal);
             }
             case EAST -> {
-                builder.addVertex(matrix, 0, 0, w).setUv(u0, v1).setColor(1f, 1f, 1f, 1f);
-                builder.addVertex(matrix, 0, 0, 0).setUv(u1, v1).setColor(1f, 1f, 1f, 1f);
-                builder.addVertex(matrix, 0, h, 0).setUv(u1, v0).setColor(1f, 1f, 1f, 1f);
-                builder.addVertex(matrix, 0, h, w).setUv(u0, v0).setColor(1f, 1f, 1f, 1f);
+                vertex(pose, consumer, 0, 0, w, u0, v1, normal);
+                vertex(pose, consumer, 0, 0, 0, u1, v1, normal);
+                vertex(pose, consumer, 0, h, 0, u1, v0, normal);
+                vertex(pose, consumer, 0, h, w, u0, v0, normal);
             }
-            case BOTTOM -> {
-                builder.addVertex(matrix, 0, 0, 0).setUv(u0, v1).setColor(1f, 1f, 1f, 1f);
-                builder.addVertex(matrix, w, 0, 0).setUv(u1, v1).setColor(1f, 1f, 1f, 1f);
-                builder.addVertex(matrix, w, 0, h).setUv(u1, v0).setColor(1f, 1f, 1f, 1f);
-                builder.addVertex(matrix, 0, 0, h).setUv(u0, v0).setColor(1f, 1f, 1f, 1f);
-            }
-            case TOP -> {
-                builder.addVertex(matrix, 0, 0, 0).setUv(u0, v1).setColor(1f, 1f, 1f, 1f);
-                builder.addVertex(matrix, w, 0, 0).setUv(u1, v1).setColor(1f, 1f, 1f, 1f);
-                builder.addVertex(matrix, w, 0, h).setUv(u1, v0).setColor(1f, 1f, 1f, 1f);
-                builder.addVertex(matrix, 0, 0, h).setUv(u0, v0).setColor(1f, 1f, 1f, 1f);
+            case BOTTOM, TOP -> {
+                vertex(pose, consumer, 0, 0, 0, u0, v1, normal);
+                vertex(pose, consumer, w, 0, 0, u1, v1, normal);
+                vertex(pose, consumer, w, 0, h, u1, v0, normal);
+                vertex(pose, consumer, 0, 0, h, u0, v0, normal);
             }
         }
+    }
 
-        BufferUploader.drawWithShader(builder.build());
-        RenderSystem.disableDepthTest();
+    private static void vertex(PoseStack.Pose pose, VertexConsumer consumer,
+                               float x, float y, float z, float u, float v, Direction normal) {
+        consumer.addVertex(pose, x, y, z)
+                .setColor(0xFFFFFFFF)
+                .setUv(u, v)
+                .setOverlay(OverlayTexture.NO_OVERLAY)
+                .setLight(FULL_BRIGHT)
+                .setNormal(pose, normal.getStepX(), normal.getStepY(), normal.getStepZ());
+    }
 
-        // Restore blend state after screen rendering
-        RenderSystem.enableBlend();
+    private void submitCursor(ScreenRenderState state, PoseStack poseStack, SubmitNodeCollector collector) {
+        BlockSide side = state.cursorSide;
+        float size = 0.04f;
 
-        // --- Render cursor overlay ---
-        ScreenCursorTracker.CursorInfo cursor = ScreenCursorTracker.getCurrentCursor();
-        if (ScreenCursorTracker.isCursorVisible() && cursor != null && cursor.pos.equals(blockEntity.getBlockPos()) && cursor.side == side) {
-            float cs = 0.04f;
-            float lx = (float) cursor.localX;
-            float ly = (float) cursor.localY;
-            float lz = (float) cursor.localZ;
+        float lx = state.cursorX;
+        float ly = state.cursorY;
+        float lz = state.cursorZ;
 
-            switch (side) {
-                case SOUTH -> lz -= 1.0f;
-                case EAST -> lx -= 1.0f;
-                case TOP -> ly -= 1.0f;
-            }
-
-            float rx = (float) side.right.x * cs;
-            float ry = (float) side.right.y * cs;
-            float rz = (float) side.right.z * cs;
-            float ux = (float) side.up.x * cs;
-            float uy = (float) side.up.y * cs;
-            float uz = (float) side.up.z * cs;
-
-            RenderSystem.setShader(GameRenderer::getPositionColorShader);
-            RenderSystem.setShaderTexture(0, 0);
-            RenderSystem.disableCull();
-            BufferBuilder cb = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
-            cb.addVertex(matrix, lx - rx - ux, ly - ry - uy, lz - rz - uz).setColor(1.0f, 0.2f, 0.2f, 0.9f);
-            cb.addVertex(matrix, lx - rx + ux, ly - ry + uy, lz - rz + uz).setColor(1.0f, 0.2f, 0.2f, 0.9f);
-            cb.addVertex(matrix, lx + rx + ux, ly + ry + uy, lz + rz + uz).setColor(1.0f, 0.2f, 0.2f, 0.9f);
-            cb.addVertex(matrix, lx + rx - ux, ly + ry - uy, lz + rz - uz).setColor(1.0f, 0.2f, 0.2f, 0.9f);
-            BufferUploader.drawWithShader(cb.build());
-            RenderSystem.enableCull();
+        switch (side) {
+            case SOUTH -> lz -= 1.0f;
+            case EAST -> lx -= 1.0f;
+            case TOP -> ly -= 1.0f;
         }
+
+        final float cx = lx, cy = ly, cz = lz;
+
+        float rx = (float) side.right.x * size;
+        float ry = (float) side.right.y * size;
+        float rz = (float) side.right.z * size;
+        float ux = (float) side.up.x * size;
+        float uy = (float) side.up.y * size;
+        float uz = (float) side.up.z * size;
+
+        poseStack.pushPose();
+        translateToSurface(poseStack, side);
+
+        collector.submitCustomGeometry(poseStack, RenderTypes.debugQuads(), (pose, consumer) -> {
+            cursorVertex(pose, consumer, cx - rx - ux, cy - ry - uy, cz - rz - uz);
+            cursorVertex(pose, consumer, cx - rx + ux, cy - ry + uy, cz - rz + uz);
+            cursorVertex(pose, consumer, cx + rx + ux, cy + ry + uy, cz + rz + uz);
+            cursorVertex(pose, consumer, cx + rx - ux, cy + ry - uy, cz + rz - uz);
+        });
 
         poseStack.popPose();
+    }
+
+    private static void cursorVertex(PoseStack.Pose pose, VertexConsumer consumer, float x, float y, float z) {
+        consumer.addVertex(pose, x, y, z).setColor(255, 51, 51, 230);
+    }
+
+    private static boolean isBlockedByOpaque(BlockPos pos, ScreenData screen) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return false;
+        BlockState state = mc.level.getBlockState(pos.relative(screen.side.direction));
+        return state.isSolid();
+    }
+
+    private static boolean MCEFHelperAvailable() {
+        return net.montoyo.wd.client.mcef.MCEFHelper.isMCEFAvailable();
     }
 
     @Override
     public int getViewDistance() {
         return 32;
-    }
-
-    @Override
-    public boolean shouldRenderOffScreen(ScreenBlockEntity blockEntity) {
-        return true;
     }
 }

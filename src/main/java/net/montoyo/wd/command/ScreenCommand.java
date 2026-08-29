@@ -7,6 +7,7 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.montoyo.wd.registry.WDRegistries;
 
@@ -15,19 +16,20 @@ import java.util.Map;
 
 public class ScreenCommand {
 
-    private static final Map<String, ItemStack> ITEMS = new LinkedHashMap<>();
+    private static final Map<String, Item> ITEMS = new LinkedHashMap<>();
 
     public static void init() {
-        ITEMS.put("screen", new ItemStack(WDRegistries.SCREEN_ITEM));
-        ITEMS.put("configurator", new ItemStack(WDRegistries.CONFIGURATOR));
-        ITEMS.put("linker", new ItemStack(WDRegistries.LINKER));
-        ITEMS.put("kb_left", new ItemStack(WDRegistries.KEYBOARD_LEFT_ITEM));
-        ITEMS.put("kb_right", new ItemStack(WDRegistries.KEYBOARD_RIGHT_ITEM));
+        // Only the Item references are held here: an ItemStack cannot be built during mod
+        // initialization because item components are not bound until registries freeze.
+        ITEMS.put("screen", WDRegistries.SCREEN_ITEM);
+        ITEMS.put("configurator", WDRegistries.CONFIGURATOR);
+        ITEMS.put("linker", WDRegistries.LINKER);
+        ITEMS.put("kb_left", WDRegistries.KEYBOARD_LEFT_ITEM);
+        ITEMS.put("kb_right", WDRegistries.KEYBOARD_RIGHT_ITEM);
     }
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("screen")
-                .requires(source -> source.hasPermission(0))
                 .executes(ctx -> {
                     printHelp(ctx.getSource());
                     return 1;
@@ -53,15 +55,13 @@ public class ScreenCommand {
             return 0;
         }
 
-        ItemStack stack = ITEMS.get(name);
-        if (stack == null) {
+        Item item = ITEMS.get(name);
+        if (item == null) {
             source.sendFailure(Component.literal("Unknown item: " + name + ". Use /screen for list"));
             return 0;
         }
 
-        ItemStack give = stack.copy();
-        give.setCount(count);
-        player.getInventory().add(give);
+        player.getInventory().add(new ItemStack(item, count));
         source.sendSuccess(() -> Component.literal("Gave " + count + "x " + name), true);
         return 1;
     }
