@@ -49,7 +49,10 @@ public class KeyboardBlockLeft extends HorizontalDirectionalBlock implements Ent
 
     @Override
     public BlockState getStateForPlacement(BlockPlaceContext ctx) {
-        return this.defaultBlockState().setValue(FACING, ctx.getHorizontalDirection().getOpposite());
+        // The model's front is authored toward the placing player, so the block takes the
+        // player's own facing rather than the usual opposite. Using getOpposite() here turned
+        // the keyboard away from the player, which also mirrored the left and right halves.
+        return this.defaultBlockState().setValue(FACING, ctx.getHorizontalDirection());
     }
 
     @Override
