@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v1.3.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # A tag that disagrees with gradle.properties would publish a jar whose filename and
+      # in-game version do not match the release, so fail loudly instead.
+      - name: Check tag matches mod_version
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          TAG_VERSION="${TAG#v}"
+          MOD_VERSION=$(grep -E '^mod_version=' gradle.properties | cut -d= -f2 | tr -d '[:space:]')
+          echo "tag=$TAG_VERSION  mod_version=$MOD_VERSION"
+          if [ "$TAG_VERSION" != "$MOD_VERSION" ]; then
+            echo "::error::Tag $TAG_VERSION does not match mod_version $MOD_VERSION in gradle.properties"
+            exit 1
+          fi
+
+      - name: Build
+        run: |
+          chmod +x ./gradlew
+          ./gradlew build --stacktrace
+
+      - name: Read Minecraft version
+        id: mc
+        run: echo "version=$(grep -E '^minecraft_version=' gradle.properties | cut -d= -f2 | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: WebDisplays ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          files: build/libs/*.jar
+          fail_on_unmatched_files: true
+          body: |
+            WebDisplays for Minecraft ${{ steps.mc.outputs.version }} (Fabric).
+
+            **Requires** Fabric API and Java 25. For browser screens to display anything you also
+            need [MCEF Modern](https://modrinth.com/mod/mcef-modern); without it the mod loads
+            normally but screens stay blank.
+
+            Download the `.jar` below (not the `-sources` one) and drop it in your `mods` folder.
