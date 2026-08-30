@@ -53,8 +53,32 @@ All of them are in the **Web Displays** creative tab, or via command:
 | <kbd>F6</kbd> | Toggle screen rendering (useful for debugging) |
 | Right-click a linked keyboard | Enter typing mode (<kbd>Esc</kbd> to leave) |
 
-> **Keystrokes are sent to the server in plain text.** Never type a password on an in-game
-> keyboard — anyone able to read server traffic or logs can see it.
+> **A screen's URL is stored in the world and visible to everyone.** Typing on a keyboard block
+> stays on your own client and is never sent anywhere, but the address you set in the Screen
+> Configurator is saved to the world and shown to any player who opens it.
+
+## Multiplayer
+
+Works on a dedicated server. Install the mod on the server and on every client; the server does
+**not** need MCEF (it is client-only), but each player does, or their screens stay blank.
+
+What the server owns and syncs to everyone: the screens on a block, their size, rotation, URL and
+volume. Change the URL and every player's screen navigates.
+
+What it does not sync: **clicks, scrolling and typing are local to each player.** Every client runs
+its own independent browser at that URL, with its own cookies, logins and playback position. If you
+click play on a video, other players do not see it start — they each see their own copy of the page.
+Two people cannot collaborate in the same page the way they could on one real monitor.
+
+Worth knowing before putting this on a public server:
+
+- **There is no permission check.** A screen records who created it, but nothing enforces it — any
+  player can retarget, resize or mute any screen.
+- **There is no URL filter.** `isSiteBlacklisted` always returns `false`, so any player can display
+  anything to everyone in range.
+- **`/screen` is available to all players** and hands out the mod's items.
+- Each screen is a full Chromium instance **per player in range**, so a wall of screens is
+  expensive on clients.
 
 ## Building
 
