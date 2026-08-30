@@ -35,11 +35,24 @@ public class ScreenBlockEntity extends BlockEntity {
     public static List<ScreenBlockEntity> getClientScreens() {
         if (clientScreensDirty) {
             synchronized (clientScreens) {
+                // Drop anything already torn down while rebuilding. A screen that lingers here
+                // after its block is gone still gets raycast, and an invisible hit at the old
+                // location steals the cursor from every screen placed afterwards.
+                clientScreens.removeIf(screen -> screen.isRemoved() || screen.getLevel() == null);
                 clientScreensSnapshot = new ArrayList<>(clientScreens);
                 clientScreensDirty = false;
             }
         }
         return clientScreensSnapshot;
+    }
+
+    /** Forgets a screen the client has determined is no longer live at its position. */
+    public static void forgetClientScreen(ScreenBlockEntity screen) {
+        synchronized (clientScreens) {
+            if (clientScreens.remove(screen)) {
+                clientScreensDirty = true;
+            }
+        }
     }
     private final ArrayList<ScreenData> screens = new ArrayList<>();
     private boolean loaded = false;

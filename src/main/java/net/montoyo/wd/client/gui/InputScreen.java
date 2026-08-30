@@ -1,7 +1,6 @@
 package net.montoyo.wd.client.gui;
 
 import com.mojang.blaze3d.platform.InputConstants;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.CharacterEvent;
@@ -10,10 +9,7 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.montoyo.wd.client.ScreenCursorTracker;
-import net.montoyo.wd.client.mcef.MCEFHelper;
-import net.montoyo.wd.entity.ScreenBlockEntity;
 import net.montoyo.wd.client.ClientInputHandler;
-import net.montoyo.wd.entity.ScreenData;
 import net.montoyo.wd.network.ScreenInputPayload;
 import net.montoyo.wd.utilities.data.BlockSide;
 
@@ -21,7 +17,6 @@ public class InputScreen extends Screen {
 
     private final BlockPos screenPos;
     private final BlockSide screenSide;
-    private final StringBuilder inputBuffer = new StringBuilder();
 
     public InputScreen(BlockPos screenPos, BlockSide screenSide) {
         super(Component.literal(""));
@@ -37,9 +32,6 @@ public class InputScreen extends Screen {
         }
         ClientInputHandler.send(ScreenInputPayload.keyDown(screenPos, screenSide.id,
                 event.key(), event.modifiers()));
-        if (event.key() == InputConstants.KEY_BACKSPACE && inputBuffer.length() > 0) {
-            inputBuffer.setLength(inputBuffer.length() - 1);
-        }
         return true;
     }
 
@@ -54,9 +46,6 @@ public class InputScreen extends Screen {
     public boolean charTyped(CharacterEvent event) {
         int codePoint = event.codepoint();
         ClientInputHandler.send(ScreenInputPayload.charTyped(screenPos, screenSide.id, codePoint));
-        if (codePoint >= 32 && codePoint != 127) {
-            inputBuffer.appendCodePoint(codePoint);
-        }
         return true;
     }
 
@@ -81,10 +70,11 @@ public class InputScreen extends Screen {
         // also keeps the screen you are typing on visible, which is the point of this overlay.
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
 
-        String display = inputBuffer.toString();
-        if (display.length() > 40) display = "..." + display.substring(display.length() - 37);
-        if (display.isEmpty()) display = " ";
-        graphics.text(this.font, "> " + display + " _", 8, 8, 0xFFFFFFFF, true);
+        // Deliberately no echo of what has been typed. The overlay cannot see the page's
+        // focused field, so a local buffer drifts from it the moment anything edits the text
+        // -- backspace, autocomplete, or another player typing on the same shared screen --
+        // and showing it invites the reader to trust it.
+        graphics.text(this.font, "Typing on screen", 8, 8, 0xFFFFFFFF, true);
         graphics.text(this.font, "ESC to exit", 8, 20, 0xFF888888, true);
     }
 
@@ -99,14 +89,4 @@ public class InputScreen extends Screen {
 
     public BlockPos getScreenPos() { return screenPos; }
     public BlockSide getScreenSide() { return screenSide; }
-
-    private Object getBrowser() {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null) return null;
-        if (mc.level.getBlockEntity(screenPos) instanceof ScreenBlockEntity screen) {
-            ScreenData data = screen.getScreen(screenSide);
-            return data != null ? data.browser : null;
-        }
-        return null;
-    }
 }

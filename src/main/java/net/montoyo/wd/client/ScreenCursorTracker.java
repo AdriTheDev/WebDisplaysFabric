@@ -71,6 +71,14 @@ public class ScreenCursorTracker {
         for (ScreenBlockEntity screen : ScreenBlockEntity.getClientScreens()) {
             if (screen.getLevel() != mc.level) continue;
 
+            // Only trust a screen that is still the live block entity at its own position.
+            // setRemoved is the sole cleanup path, so if it ever fails to fire the stale entry
+            // would keep winning the raycast from wherever the block used to be.
+            if (screen.isRemoved() || mc.level.getBlockEntity(screen.getBlockPos()) != screen) {
+                ScreenBlockEntity.forgetClientScreen(screen);
+                continue;
+            }
+
             for (int i = 0; i < screen.screenCount(); i++) {
                 ScreenData data = screen.getScreen(i);
                 if (data == null || data.browser == null) continue;
