@@ -31,14 +31,14 @@ public class InputScreen extends Screen {
             return true;
         }
         ClientInputHandler.send(ScreenInputPayload.keyDown(screenPos, screenSide.id,
-                event.key(), event.modifiers()));
+                event.key(), event.scancode(), event.modifiers()));
         return true;
     }
 
     @Override
     public boolean keyReleased(KeyEvent event) {
         ClientInputHandler.send(ScreenInputPayload.keyUp(screenPos, screenSide.id,
-                event.key(), event.modifiers()));
+                event.key(), event.scancode(), event.modifiers()));
         return true;
     }
 

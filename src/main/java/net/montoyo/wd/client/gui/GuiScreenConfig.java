@@ -91,7 +91,7 @@ public class GuiScreenConfig extends Screen {
             ).bounds(cx + 75, cy + 60, 45, 20).build());
 
             addRenderableWidget(new VolumeSlider(cx - 100, cy + 90, 200, 20,
-                    screen != null ? screen.volume : 1.0f));
+                    screen != null ? screen.volume : ScreenData.DEFAULT_VOLUME));
         }
 
         addRenderableWidget(Button.builder(

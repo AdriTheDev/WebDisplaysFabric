@@ -44,6 +44,12 @@ public class ScreenRenderer implements BlockEntityRenderer<ScreenBlockEntity, Sc
         state.faces.clear();
         state.hasCursor = false;
 
+        // Vanilla hands us the live block entity straight out of the chunk, every frame the
+        // block is in view, so this is the one place guaranteed to see every screen a client
+        // actually has. Registering here rather than relying on setLevel alone is what stops a
+        // player from ending up with a screen they can see but cannot point at.
+        ScreenBlockEntity.rememberClientScreen(blockEntity);
+
         if (!MCEFHelperAvailable() || !ClientInit.isMCEFRenderingEnabled()) {
             return;
         }

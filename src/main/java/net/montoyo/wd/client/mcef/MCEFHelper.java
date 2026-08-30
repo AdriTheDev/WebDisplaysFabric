@@ -173,19 +173,48 @@ public class MCEFHelper {
      * Sets the volume of every media element on the page, and keeps new ones in line.
      *
      * <p>CEF has no per-browser volume control, so this drives the HTML5 media elements
-     * directly. A page can create media at any time, so the script leaves a small interval
-     * behind to reapply the setting rather than needing to be re-injected constantly.
+     * directly. Simply assigning {@code element.volume} loses: a site with its own volume
+     * control (YouTube being the obvious one) reasserts its stored level within a second, so
+     * the setting appeared to take and then snapped back to full.
+     *
+     * <p>Instead the setter on {@code HTMLMediaElement.prototype} is replaced, which every
+     * assignment on the page necessarily goes through. The page's value is remembered and
+     * handed back by the getter, so its own slider still reads and behaves normally, but what
+     * reaches the element is that value scaled by the screen's setting. The screen volume is
+     * then a ceiling on the page rather than a fight with it. A timer still sweeps existing
+     * elements, since media created before the hook - or set through some path that avoids the
+     * setter - would otherwise stay loud.
      */
     public static void setBrowserVolume(Object browser, float volume) {
         float clamped = Math.max(0.0f, Math.min(1.0f, volume));
-        injectJavascript(browser,
-                "(function(v){window.__wdVolume=v;"
-                + "var apply=function(){try{document.querySelectorAll('video,audio').forEach("
-                + "function(e){if(e.volume!==window.__wdVolume)e.volume=window.__wdVolume;"
-                + "e.muted=window.__wdVolume<=0})}catch(e){}};apply();"
-                + "if(!window.__wdVolumeTimer)window.__wdVolumeTimer=setInterval(apply,500)})("
-                + clamped + ")");
+        injectJavascript(browser, VOLUME_JS_PREFIX + clamped + ")");
     }
+
+    /**
+     * The volume script, less its trailing argument. Injected on page load as well as on every
+     * change, because a fresh document starts with an unhooked prototype and full volume.
+     */
+    public static final String VOLUME_JS_PREFIX =
+            "(function(v){window.__wdVolume=v;"
+            // Hook the prototype once. Keep the original accessors: they are the only way to
+            // reach the real element volume once the property has been shadowed.
+            + "if(!window.__wdVolumeDesc){var d=Object.getOwnPropertyDescriptor("
+            + "HTMLMediaElement.prototype,'volume');"
+            + "if(d&&d.get&&d.set){window.__wdVolumeDesc=d;"
+            + "Object.defineProperty(HTMLMediaElement.prototype,'volume',{configurable:true,"
+            + "enumerable:d.enumerable,"
+            + "get:function(){return this.__wdPageVolume===undefined?d.get.call(this):this.__wdPageVolume},"
+            + "set:function(x){this.__wdPageVolume=x;d.set.call(this,x*window.__wdVolume)}})}}"
+            + "var apply=function(){try{document.querySelectorAll('video,audio').forEach("
+            + "function(e){var page=e.__wdPageVolume===undefined?1:e.__wdPageVolume;"
+            + "var target=page*window.__wdVolume;var d=window.__wdVolumeDesc;"
+            + "if(d){if(Math.abs(d.get.call(e)-target)>0.001)d.set.call(e,target)}"
+            + "else if(Math.abs(e.volume-target)>0.001){e.volume=target}"
+            // Only ever undo a mute this script applied; a page that muted itself deliberately
+            // is left alone.
+            + "if(window.__wdVolume<=0){e.__wdMuted=true;e.muted=true}"
+            + "else if(e.__wdMuted){e.__wdMuted=false;e.muted=false}})}catch(err){}};"
+            + "apply();if(!window.__wdVolumeTimer)window.__wdVolumeTimer=setInterval(apply,1000)})(";
 
     // === Synthesised input ===
     //
@@ -217,14 +246,59 @@ public class MCEFHelper {
         invokeVoid(browser, "onCharTyped", new Class[]{CharacterEvent.class}, new CharacterEvent(c));
     }
 
+    /** AWT event ids, spelled out so the AWT class does not have to be imported for two ints. */
+    private static final int AWT_KEY_PRESSED = 400 + 1;
+    private static final int AWT_KEY_RELEASED = 400 + 2;
+
     public static void sendKeyPress(Object browser, int glfwKeyCode, long scanCode, int modifiers) {
+        if (sendAwtKey(browser, AWT_KEY_PRESSED, glfwKeyCode, (int) scanCode, modifiers)) return;
         invokeVoid(browser, "onKeyPressed", new Class[]{KeyEvent.class},
                 new KeyEvent(glfwKeyCode, (int) scanCode, modifiers));
     }
 
     public static void sendKeyRelease(Object browser, int glfwKeyCode, long scanCode, int modifiers) {
+        if (sendAwtKey(browser, AWT_KEY_RELEASED, glfwKeyCode, (int) scanCode, modifiers)) return;
         invokeVoid(browser, "onKeyReleased", new Class[]{KeyEvent.class},
                 new KeyEvent(glfwKeyCode, (int) scanCode, modifiers));
+    }
+
+    /**
+     * Hands a key straight to JCEF as an AWT event carrying its scan code.
+     *
+     * <p>MCEF's own onKeyPressed builds an AWT event with no scan code, which on Windows leaves
+     * Chromium with no virtual key code to act on - see {@link ScancodeKeyEvent}. This does the
+     * same job with the scan code filled in. The AWT key code and modifier translation is still
+     * MCEF's, borrowed rather than reimplemented so the two paths cannot disagree.
+     *
+     * <p>Returns false, so the caller falls back to MCEF, if any part of that is missing: this
+     * reaches past MCEF's public API into JCEF, and a version that has moved things around
+     * should degrade to the old behaviour rather than swallow every keystroke.
+     */
+    private static boolean sendAwtKey(Object browser, int awtEventId, int glfwKeyCode,
+                                      int scanCode, int modifiers) {
+        if (browser == null) return false;
+        try {
+            Class<?> cls = browser.getClass();
+            Method toAwtKeyCode = findCachedMethod(cls, "toAwtKeyCode", int.class);
+            Method toAwtModifiers = findCachedMethod(cls, "toAwtInputModifiers", int.class);
+            Method getComponent = findCachedMethod(cls, "getUIComponent");
+            Method send = findCachedMethod(cls, "sendKeyEvent", java.awt.event.KeyEvent.class);
+            if (toAwtKeyCode == null || toAwtModifiers == null || getComponent == null || send == null) {
+                return false;
+            }
+
+            Object component = getComponent.invoke(browser);
+            if (!(component instanceof java.awt.Component awtComponent)) return false;
+
+            int keyCode = (int) toAwtKeyCode.invoke(null, glfwKeyCode);
+            int awtModifiers = (int) toAwtModifiers.invoke(null, modifiers);
+            send.invoke(browser, new ScancodeKeyEvent(awtComponent, awtEventId, awtModifiers,
+                    keyCode, (char) keyCode, scanCode));
+            return true;
+        } catch (Throwable e) {
+            Log.warning("Direct key delivery unavailable, falling back to MCEF: {}", e.toString());
+            return false;
+        }
     }
 
     // === Reflection plumbing ===

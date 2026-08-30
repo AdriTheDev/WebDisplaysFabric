@@ -61,7 +61,7 @@ public final class ClientInputHandler {
             }
             case ScreenInputPayload.KIND_KEY_DOWN -> {
                 ensureFocused(browser);
-                MCEFHelper.sendKeyPress(browser, payload.a(), 0, payload.b());
+                MCEFHelper.sendKeyPress(browser, payload.a(), payload.scancode(), payload.b());
 
                 // Backspace, enter and tab do nothing on a key-down alone. Windows follows
                 // WM_KEYDOWN with a WM_CHAR carrying the control character for these, and CEF's
@@ -75,7 +75,7 @@ public final class ClientInputHandler {
                 }
             }
             case ScreenInputPayload.KIND_KEY_UP ->
-                    MCEFHelper.sendKeyRelease(browser, payload.a(), 0, payload.b());
+                    MCEFHelper.sendKeyRelease(browser, payload.a(), payload.scancode(), payload.b());
             case ScreenInputPayload.KIND_CHAR -> {
                 ensureFocused(browser);
                 MCEFHelper.sendKeyEvent(browser, (char) payload.a());

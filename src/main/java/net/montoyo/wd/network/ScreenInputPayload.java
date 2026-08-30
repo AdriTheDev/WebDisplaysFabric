@@ -64,12 +64,21 @@ public record ScreenInputPayload(BlockPos pos, int side, int kind, int a, int b,
         return new ScreenInputPayload(pos, side, KIND_SCROLL, x, y, (int) Math.round(amount * SCROLL_SCALE));
     }
 
-    public static ScreenInputPayload keyDown(BlockPos pos, int side, int key, int modifiers) {
-        return new ScreenInputPayload(pos, side, KIND_KEY_DOWN, key, modifiers, 0);
+    public static ScreenInputPayload keyDown(BlockPos pos, int side, int key, int scancode, int modifiers) {
+        return new ScreenInputPayload(pos, side, KIND_KEY_DOWN, key, modifiers, scancode);
     }
 
-    public static ScreenInputPayload keyUp(BlockPos pos, int side, int key, int modifiers) {
-        return new ScreenInputPayload(pos, side, KIND_KEY_UP, key, modifiers, 0);
+    public static ScreenInputPayload keyUp(BlockPos pos, int side, int key, int scancode, int modifiers) {
+        return new ScreenInputPayload(pos, side, KIND_KEY_UP, key, modifiers, scancode);
+    }
+
+    /**
+     * The hardware scan code of a key event. Carried rather than recomputed because Chromium
+     * needs it to work out which key was pressed on Windows, and only the originating client
+     * ever saw it.
+     */
+    public int scancode() {
+        return c;
     }
 
     public static ScreenInputPayload charTyped(BlockPos pos, int side, int codePoint) {

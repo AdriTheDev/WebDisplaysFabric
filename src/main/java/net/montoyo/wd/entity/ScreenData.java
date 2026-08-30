@@ -6,6 +6,16 @@ import net.montoyo.wd.utilities.data.Rotation;
 import net.montoyo.wd.utilities.math.Vector2i;
 
 public class ScreenData {
+
+    /**
+     * Volume a newly placed screen starts at.
+     *
+     * <p>Deliberately not full: a screen is placed before anyone knows what the page will do,
+     * and a site that opens on an autoplaying advert at 100% is painful. Turning it up is one
+     * slider drag; being deafened first is not recoverable.
+     */
+    public static final float DEFAULT_VOLUME = 0.25f;
+
     public BlockSide side;
     public Vector2i resolution;
     public Vector2i size;
@@ -18,7 +28,7 @@ public class ScreenData {
     public long lastClickTime;
     public String lastUrl = ""; // for detecting page navigation
     public double zoomLevel = 1.0; // browser page zoom (1.0 = 100%)
-    public float volume = 1.0f; // media volume, 0.0 = muted, 1.0 = full
+    public float volume = DEFAULT_VOLUME; // media volume, 0.0 = muted, 1.0 = full
 
     public ScreenData(BlockSide side, Vector2i resolution, Vector2i size, String owner) {
         this.side = side;

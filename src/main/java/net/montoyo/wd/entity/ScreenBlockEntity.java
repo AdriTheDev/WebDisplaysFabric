@@ -54,6 +54,27 @@ public class ScreenBlockEntity extends BlockEntity {
             }
         }
     }
+
+    /**
+     * Registers a screen for cursor raycasting, if it is not already.
+     *
+     * <p>Registration used to happen only in {@link #setLevel}, which is one call on one code
+     * path: any client that ended up with a block entity by some other route - a chunk arriving
+     * while the block entity already existed, a re-sync replacing it, placement predicted
+     * locally and then confirmed - had a perfectly good screen that the raycast never
+     * considered. The symptom is per-client and looks arbitrary: no cursor, clicks passing
+     * through to the block behind, and block breaking not cancelled, for one player while
+     * everyone else is fine. The renderer calls this every frame with the live block entity, so
+     * anything actually being drawn is now guaranteed to be raycastable.
+     */
+    public static void rememberClientScreen(ScreenBlockEntity screen) {
+        synchronized (clientScreens) {
+            if (!clientScreens.contains(screen)) {
+                clientScreens.add(screen);
+                clientScreensDirty = true;
+            }
+        }
+    }
     private final ArrayList<ScreenData> screens = new ArrayList<>();
     private boolean loaded = false;
     private AABB renderBB;
@@ -69,12 +90,7 @@ public class ScreenBlockEntity extends BlockEntity {
     public void setLevel(net.minecraft.world.level.Level level) {
         super.setLevel(level);
         if (level.isClientSide()) {
-            synchronized (clientScreens) {
-                if (!clientScreens.contains(this)) {
-                    clientScreens.add(this);
-                    clientScreensDirty = true;
-                }
-            }
+            rememberClientScreen(this);
             load();
         }
     }
@@ -113,6 +129,9 @@ public class ScreenBlockEntity extends BlockEntity {
 
     public void addScreen(BlockSide side, Vector2i resolution, Vector2i size, String owner) {
         if (getScreen(side) != null) return;
+        // This resolution arrives from a packet and never passes through setResolution, so it
+        // is the one path by which an unbounded surface could otherwise be created.
+        clampSurface(resolution);
         screens.add(new ScreenData(side, resolution, size, owner));
         updateAABB();
         setChanged();
@@ -154,14 +173,49 @@ public class ScreenBlockEntity extends BlockEntity {
         }
     }
 
+    /**
+     * Largest browser surface a screen may be given, in pixels.
+     *
+     * <p>MCEF copies and re-uploads the whole surface on every repaint - the entire buffer, not
+     * the dirty region - and the upload happens on the client's main thread. Cost is therefore
+     * pixel count times repaint rate, and a busy page repaints constantly. A 1080p-sized budget
+     * is roughly 8 MB a frame per screen, which weaker machines survive; the old limit allowed
+     * a screen a thousand times larger than that and simply froze the game.
+     */
+    private static final int MAX_SCREEN_PIXELS = 1920 * 1080;
+
+    /** Per-axis ceiling, so a long thin screen cannot spend the whole budget on one dimension. */
+    private static final int MAX_SCREEN_AXIS = 4096;
+
+    /**
+     * Brings a requested browser surface within the limits above, in place, keeping its aspect
+     * ratio so the page is not distorted against the screen it is drawn on.
+     */
+    private static void clampSurface(Vector2i res) {
+        res.x = Math.max(64, Math.min(res.x, MAX_SCREEN_AXIS));
+        res.y = Math.max(64, Math.min(res.y, MAX_SCREEN_AXIS));
+
+        long pixels = (long) res.x * (long) res.y;
+        if (pixels > MAX_SCREEN_PIXELS) {
+            double scale = Math.sqrt((double) MAX_SCREEN_PIXELS / (double) pixels);
+            res.x = Math.max(64, (int) (res.x * scale));
+            res.y = Math.max(64, (int) (res.y * scale));
+        }
+    }
+
     public void setResolution(BlockSide side, Vector2i res) {
         ScreenData screen = getScreen(side);
         if (screen == null) return;
-        res.x = Math.max(64, Math.min(res.x, 32000));
-        res.y = Math.max(64, Math.min(res.y, 32000));
+        // How many blocks the screen occupies follows what was asked for. Only the browser
+        // surface is capped, so a big screen stays big and is merely rendered less finely
+        // rather than shrinking on the wall.
+        int blocksX = Math.max(1, (int) Math.ceil(res.x / 320.0f));
+        int blocksY = Math.max(1, (int) Math.ceil(res.y / 320.0f));
+        clampSurface(res);
+
         screen.resolution.set(res.x, res.y);
-        screen.size.x = Math.max(1, (int) Math.ceil(res.x / 320.0f));
-        screen.size.y = Math.max(1, (int) Math.ceil(res.y / 320.0f));
+        screen.size.x = blocksX;
+        screen.size.y = blocksY;
         if (level != null && level.isClientSide() && screen.browser != null) {
             MCEFHelper.resizeBrowser(screen.browser, res.x, res.y);
         }
@@ -509,7 +563,7 @@ public class ScreenBlockEntity extends BlockEntity {
             Vector2i size = new Vector2i(screenIn.getIntOr("sizeX", 2), screenIn.getIntOr("sizeY", 2));
             Rotation rot = Rotation.fromInt(screenIn.getIntOr("rotation", 0));
             boolean autoVol = screenIn.getBooleanOr("autoVolume", false);
-            float volume = screenIn.getFloatOr("volume", 1.0f);
+            float volume = screenIn.getFloatOr("volume", ScreenData.DEFAULT_VOLUME);
             String owner = screenIn.getString("owner").orElse(null);
             String url = screenIn.getString("url").orElse(null);
 

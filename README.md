@@ -53,9 +53,9 @@ All of them are in the **Web Displays** creative tab, or via command:
 | <kbd>F6</kbd> | Toggle screen rendering (useful for debugging) |
 | Right-click a linked keyboard | Enter typing mode (<kbd>Esc</kbd> to leave) |
 
-> **A screen's URL is stored in the world and visible to everyone.** Typing on a keyboard block
-> stays on your own client and is never sent anywhere, but the address you set in the Screen
-> Configurator is saved to the world and shown to any player who opens it.
+> **A screen's URL is stored in the world and visible to everyone**, and on a server **what you
+> type on a keyboard block is sent to every player watching that screen** - that is what makes a
+> screen one shared session rather than several private ones. Do not type passwords on one.
 
 ## Multiplayer
 
@@ -74,7 +74,14 @@ coordinates and lands in the right place on every client regardless of where any
 The one thing this cannot make identical is anything the page decides for itself. Each client still
 runs its own Chromium with its own cookies and logins, so per-account content differs, and a video
 plays from each viewer's own buffer — expect playback to drift by a second or two rather than being
-frame-locked.
+frame-locked. Volume is per-client for the same reason: the slider sets a ceiling on that client's
+own audio, and a page's own volume control still works underneath it.
+
+Screens are capped at roughly a 1080p browser surface however large you build them, because the
+whole surface is re-uploaded to the GPU on the client's main thread every time the page repaints.
+A bigger screen is drawn bigger, not in more detail. Chromium itself runs in its own processes, so
+page scripts do not block the game, but that per-repaint upload does — expect a busy page to cost
+frames on weaker machines, and several busy screens in view to cost more.
 
 Worth knowing before putting this on a public server:
 

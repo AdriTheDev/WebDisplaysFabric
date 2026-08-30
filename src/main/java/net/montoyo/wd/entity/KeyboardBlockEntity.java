@@ -4,6 +4,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.ValueInput;
@@ -23,13 +24,28 @@ public class KeyboardBlockEntity extends BlockEntity {
     public void setLinked(BlockPos pos, BlockSide side) {
         this.linkedPos = pos;
         this.linkedSide = side;
-        setChanged();
+        sync();
     }
 
     public void clearLinked() {
         this.linkedPos = null;
         this.linkedSide = null;
+        sync();
+    }
+
+    /**
+     * Marks the link dirty and pushes it to everyone watching this block.
+     *
+     * <p>setChanged alone only schedules a save. Without the block update the link exists solely
+     * on the server and on whoever made it, so every other player's keyboard still believes it is
+     * unlinked and refuses to open the typing overlay.
+     */
+    private void sync() {
         setChanged();
+        if (level != null && !level.isClientSide()) {
+            level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(),
+                    Block.UPDATE_ALL);
+        }
     }
 
     public @Nullable BlockPos getLinkedPos() { return linkedPos; }
