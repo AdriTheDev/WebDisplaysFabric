@@ -64,17 +64,27 @@ public class InputScreen extends Screen {
     }
 
     @Override
+    public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+        // Nothing. The default blurs and dims the world, which hides the very screen being
+        // typed on; this overlay exists to be looked through.
+    }
+
+    @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         // Do not call extractBackground here: Screen#extractRenderStateWithTooltipAndSubtitles
         // already does, and blurring twice in one frame throws. Leaving the background alone
         // also keeps the screen you are typing on visible, which is the point of this overlay.
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
 
-        // Deliberately no echo of what has been typed. The overlay cannot see the page's
-        // focused field, so a local buffer drifts from it the moment anything edits the text
-        // -- backspace, autocomplete, or another player typing on the same shared screen --
-        // and showing it invites the reader to trust it.
-        graphics.text(this.font, "Typing on screen", 8, 8, 0xFFFFFFFF, true);
+        // No echo of what has been typed: the overlay cannot see the page's focused field, so
+        // a local buffer drifts from it the moment anything edits the text. It does report
+        // whether a browser was found, which is the difference between "typing does nothing"
+        // and "this keyboard points at a face with no screen on it".
+        if (ClientInputHandler.browserAt(screenPos, screenSide.id) != null) {
+            graphics.text(this.font, "Typing on screen", 8, 8, 0xFFFFFFFF, true);
+        } else {
+            graphics.text(this.font, "No screen on the linked face", 8, 8, 0xFFFF5555, true);
+        }
         graphics.text(this.font, "ESC to exit", 8, 20, 0xFF888888, true);
     }
 
