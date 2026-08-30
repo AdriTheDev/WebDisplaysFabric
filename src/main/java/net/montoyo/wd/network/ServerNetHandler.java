@@ -63,6 +63,13 @@ public class ServerNetHandler {
                             }
                         }
                     }
+                    case ScreenActionPayload.ACTION_SET_VOLUME -> {
+                        try {
+                            screen.setVolume(side, Float.parseFloat(payload.extraData()));
+                        } catch (NumberFormatException e) {
+                            Log.warning("Invalid volume data: {}", payload.extraData());
+                        }
+                    }
                     case ScreenActionPayload.ACTION_SET_ROTATION -> {
                         try {
                             int rot = Integer.parseInt(payload.extraData());

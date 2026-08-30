@@ -69,6 +69,9 @@ public class ClientInit implements ClientModInitializer {
                         if (!currentUrl.isEmpty() && !currentUrl.equals(data.lastUrl)) {
                             data.lastUrl = currentUrl;
                             ScreenBlockEntity.ensureWindowOpenOverride(data.browser);
+                            // A new page starts at full volume with none of our scripts, so
+                            // restore the screen's setting alongside the window.open override.
+                            MCEFHelper.setBrowserVolume(data.browser, data.volume);
                         }
                     }
                 }

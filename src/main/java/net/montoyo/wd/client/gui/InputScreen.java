@@ -28,6 +28,25 @@ public class InputScreen extends Screen {
     }
 
     @Override
+    protected void init() {
+        // CEF discards key events aimed at an unfocused browser, so typing does nothing until
+        // the browser is told it has focus.
+        Object browser = getBrowser();
+        if (browser != null) {
+            MCEFHelper.setFocus(browser, true);
+        }
+    }
+
+    @Override
+    public void removed() {
+        Object browser = getBrowser();
+        if (browser != null) {
+            MCEFHelper.setFocus(browser, false);
+        }
+        super.removed();
+    }
+
+    @Override
     public boolean keyPressed(KeyEvent event) {
         if (event.key() == InputConstants.KEY_ESCAPE) {
             onClose();

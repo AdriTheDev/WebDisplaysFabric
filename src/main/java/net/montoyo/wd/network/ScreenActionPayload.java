@@ -30,6 +30,7 @@ public record ScreenActionPayload(BlockPos pos, int sideOrdinal, String action, 
     public static final String ACTION_SET_URL = "set_url";
     public static final String ACTION_SET_RESOLUTION = "set_resolution";
     public static final String ACTION_SET_ROTATION = "set_rotation";
+    public static final String ACTION_SET_VOLUME = "set_volume";
 
     public static ScreenActionPayload addScreen(BlockPos pos, int sideOrdinal, String owner) {
         return new ScreenActionPayload(pos, sideOrdinal, ACTION_ADD_SCREEN, owner);
@@ -49,5 +50,9 @@ public record ScreenActionPayload(BlockPos pos, int sideOrdinal, String action, 
 
     public static ScreenActionPayload setRotation(BlockPos pos, int sideOrdinal, int rotationOrdinal) {
         return new ScreenActionPayload(pos, sideOrdinal, ACTION_SET_ROTATION, String.valueOf(rotationOrdinal));
+    }
+
+    public static ScreenActionPayload setVolume(BlockPos pos, int sideOrdinal, float volume) {
+        return new ScreenActionPayload(pos, sideOrdinal, ACTION_SET_VOLUME, String.valueOf(volume));
     }
 }

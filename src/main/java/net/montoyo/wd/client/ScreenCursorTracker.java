@@ -183,6 +183,8 @@ public class ScreenCursorTracker {
         if (isDown && !leftButtonPressed) {
             // Mouse button just pressed down
             leftButtonPressed = true;
+            // Give the browser focus so text fields under the click accept typing.
+            MCEFHelper.setFocus(currentCursor.screenData.browser, true);
             long now = System.currentTimeMillis();
             int clickCount = (now - currentCursor.screenData.lastClickTime < 500) ? 2 : 1;
             currentCursor.screenData.lastClickTime = now;

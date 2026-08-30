@@ -3,6 +3,7 @@ package net.montoyo.wd.client.gui;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.BlockPos;
@@ -88,12 +89,15 @@ public class GuiScreenConfig extends Screen {
                     Component.translatable("webdisplays.gui.screencfg.rot270"),
                     b -> setRotation(Rotation.ROT_270)
             ).bounds(cx + 75, cy + 60, 45, 20).build());
+
+            addRenderableWidget(new VolumeSlider(cx - 100, cy + 90, 200, 20,
+                    screen != null ? screen.volume : 1.0f));
         }
 
         addRenderableWidget(Button.builder(
                 Component.translatable("webdisplays.gui.seturl.cancel"),
                 b -> this.onClose()
-        ).bounds(cx - 50, cy + 95, 100, 20).build());
+        ).bounds(cx - 50, isNew ? cy + 95 : cy + 120, 100, 20).build());
     }
 
     private int parseInt(String s, int def) {
@@ -122,6 +126,34 @@ public class GuiScreenConfig extends Screen {
             }
         }
         this.onClose();
+    }
+
+    private void setVolume(float volume) {
+        ScreenBlockEntity sbe = getBlockEntity();
+        if (sbe == null) return;
+        sbe.setVolume(side, volume);
+        if (ClientPlayNetworking.canSend(ScreenActionPayload.TYPE)) {
+            ClientPlayNetworking.send(ScreenActionPayload.setVolume(blockPos, side.id, volume));
+        }
+    }
+
+    /** Slider driving the screen's media volume; applies live as it is dragged. */
+    private class VolumeSlider extends AbstractSliderButton {
+        VolumeSlider(int x, int y, int width, int height, double initial) {
+            super(x, y, width, height, Component.empty(), initial);
+            updateMessage();
+        }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Component.translatable("webdisplays.gui.screencfg.volume",
+                    (int) Math.round(this.value * 100)));
+        }
+
+        @Override
+        protected void applyValue() {
+            setVolume((float) this.value);
+        }
     }
 
     private void setRotation(Rotation rot) {

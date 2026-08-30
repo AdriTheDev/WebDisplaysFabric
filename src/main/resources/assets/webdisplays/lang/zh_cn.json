@@ -19,6 +19,7 @@
   "webdisplays.message.notLinked": "这个外部设备还未连接.",
   "webdisplays.message.linkAbort": "连接器复位",
   "webdisplays.gui.screencfg.seturl": "修改网址",
+  "webdisplays.gui.screencfg.volume": "音量: %s%%",
   "webdisplays.gui.screencfg.rot0": "0°",
   "webdisplays.gui.screencfg.rot90": "90°",
   "webdisplays.gui.screencfg.rot180": "180°",

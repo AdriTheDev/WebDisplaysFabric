@@ -169,6 +169,19 @@ public class ScreenBlockEntity extends BlockEntity {
         }
     }
 
+    public void setVolume(BlockSide side, float volume) {
+        ScreenData screen = getScreen(side);
+        if (screen == null) return;
+        screen.volume = Math.max(0.0f, Math.min(1.0f, volume));
+        if (level != null && level.isClientSide() && screen.browser != null) {
+            MCEFHelper.setBrowserVolume(screen.browser, screen.volume);
+        }
+        setChanged();
+        if (level != null && !level.isClientSide()) {
+            level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
+        }
+    }
+
     public void setAutoVolume(BlockSide side, boolean av) {
         ScreenData screen = getScreen(side);
         if (screen == null) return;
@@ -304,6 +317,7 @@ public class ScreenBlockEntity extends BlockEntity {
                     if (screen.browser != null) {
                         Log.info("Created browser for screen at {} side {}", worldPosition, screen.side);
                         injectScripts(screen.browser);
+                        MCEFHelper.setBrowserVolume(screen.browser, screen.volume);
                     }
                 }
             }
@@ -334,6 +348,7 @@ public class ScreenBlockEntity extends BlockEntity {
                 if (screen.browser != null) {
                     Log.info("Created browser for screen at {} side {}", worldPosition, screen.side);
                     injectScripts(screen.browser);
+                    MCEFHelper.setBrowserVolume(screen.browser, screen.volume);
                     created = true;
                 }
             }
@@ -451,6 +466,7 @@ public class ScreenBlockEntity extends BlockEntity {
             screenOut.putInt("sizeY", screen.size.y);
             screenOut.putInt("rotation", screen.rotation.id);
             screenOut.putBoolean("autoVolume", screen.autoVolume);
+            screenOut.putFloat("volume", screen.volume);
             if (screen.owner != null) screenOut.putString("owner", screen.owner);
             if (screen.url != null) screenOut.putString("url", screen.url);
         }
@@ -474,12 +490,14 @@ public class ScreenBlockEntity extends BlockEntity {
             Vector2i size = new Vector2i(screenIn.getIntOr("sizeX", 2), screenIn.getIntOr("sizeY", 2));
             Rotation rot = Rotation.fromInt(screenIn.getIntOr("rotation", 0));
             boolean autoVol = screenIn.getBooleanOr("autoVolume", false);
+            float volume = screenIn.getFloatOr("volume", 1.0f);
             String owner = screenIn.getString("owner").orElse(null);
             String url = screenIn.getString("url").orElse(null);
 
             ScreenData screen = new ScreenData(side, res, size, owner);
             screen.rotation = rot;
             screen.autoVolume = autoVol;
+            screen.volume = volume;
             screen.url = url;
 
             ScreenData old = null;
@@ -495,6 +513,9 @@ public class ScreenBlockEntity extends BlockEntity {
 
                 if (old.resolution.x != res.x || old.resolution.y != res.y) {
                     MCEFHelper.resizeBrowser(screen.browser, res.x, res.y);
+                }
+                if (old.volume != volume) {
+                    MCEFHelper.setBrowserVolume(screen.browser, volume);
                 }
                 if (url != null && !url.equals(old.url)) {
                     try {

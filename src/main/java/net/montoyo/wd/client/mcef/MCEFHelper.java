@@ -169,6 +169,24 @@ public class MCEFHelper {
         invokeVoid(cef, "executeJavaScript", new Class[]{String.class, String.class, int.class}, code, "", 0);
     }
 
+    /**
+     * Sets the volume of every media element on the page, and keeps new ones in line.
+     *
+     * <p>CEF has no per-browser volume control, so this drives the HTML5 media elements
+     * directly. A page can create media at any time, so the script leaves a small interval
+     * behind to reapply the setting rather than needing to be re-injected constantly.
+     */
+    public static void setBrowserVolume(Object browser, float volume) {
+        float clamped = Math.max(0.0f, Math.min(1.0f, volume));
+        injectJavascript(browser,
+                "(function(v){window.__wdVolume=v;"
+                + "var apply=function(){try{document.querySelectorAll('video,audio').forEach("
+                + "function(e){if(e.volume!==window.__wdVolume)e.volume=window.__wdVolume;"
+                + "e.muted=window.__wdVolume<=0})}catch(e){}};apply();"
+                + "if(!window.__wdVolumeTimer)window.__wdVolumeTimer=setInterval(apply,500)})("
+                + clamped + ")");
+    }
+
     // === Synthesised input ===
     //
     // These go through MCEF Modern's own MCEFBrowser methods rather than JCEF's raw AWT

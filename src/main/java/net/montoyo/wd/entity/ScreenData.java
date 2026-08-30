@@ -18,6 +18,7 @@ public class ScreenData {
     public long lastClickTime;
     public String lastUrl = ""; // for detecting page navigation
     public double zoomLevel = 1.0; // browser page zoom (1.0 = 100%)
+    public float volume = 1.0f; // media volume, 0.0 = muted, 1.0 = full
 
     public ScreenData(BlockSide side, Vector2i resolution, Vector2i size, String owner) {
         this.side = side;

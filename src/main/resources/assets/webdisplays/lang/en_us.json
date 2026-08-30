@@ -19,6 +19,7 @@
   "webdisplays.message.notLinked": "This peripheral has not been linked yet.",
   "webdisplays.message.linkAbort": "Linker reset",
   "webdisplays.gui.screencfg.seturl": "Change URL",
+  "webdisplays.gui.screencfg.volume": "Volume: %s%%",
   "webdisplays.gui.screencfg.rot0": "0°",
   "webdisplays.gui.screencfg.rot90": "90°",
   "webdisplays.gui.screencfg.rot180": "180°",
