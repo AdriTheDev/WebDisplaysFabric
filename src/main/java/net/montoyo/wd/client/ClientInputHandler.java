@@ -1,5 +1,6 @@
 package net.montoyo.wd.client;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
@@ -61,6 +62,17 @@ public final class ClientInputHandler {
             case ScreenInputPayload.KIND_KEY_DOWN -> {
                 ensureFocused(browser);
                 MCEFHelper.sendKeyPress(browser, payload.a(), 0, payload.b());
+
+                // Backspace, enter and tab do nothing on a key-down alone. Windows follows
+                // WM_KEYDOWN with a WM_CHAR carrying the control character for these, and CEF's
+                // off-screen input path expects that pair; Minecraft never reports a typed
+                // character for them, so the character has to be synthesised here or the key
+                // is silently ignored. Printable keys already arrive with their own char event
+                // and must not be doubled up.
+                char control = controlCharFor(payload.a());
+                if (control != 0) {
+                    MCEFHelper.sendKeyEvent(browser, control);
+                }
             }
             case ScreenInputPayload.KIND_KEY_UP ->
                     MCEFHelper.sendKeyRelease(browser, payload.a(), 0, payload.b());
@@ -70,6 +82,16 @@ public final class ClientInputHandler {
             }
             default -> { }
         }
+    }
+
+    /** The character CEF expects alongside an editing key, or 0 for keys that need none. */
+    private static char controlCharFor(int glfwKey) {
+        return switch (glfwKey) {
+            case InputConstants.KEY_BACKSPACE -> '\b';
+            case InputConstants.KEY_RETURN, InputConstants.KEY_NUMPADENTER -> '\r';
+            case InputConstants.KEY_TAB -> '\t';
+            default -> 0;
+        };
     }
 
     private static void ensureFocused(Object browser) {
