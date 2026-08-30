@@ -4,6 +4,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.Vec3;
 import net.montoyo.wd.client.mcef.MCEFHelper;
+import net.montoyo.wd.network.ScreenInputPayload;
 import net.montoyo.wd.entity.ScreenBlockEntity;
 import net.montoyo.wd.entity.ScreenData;
 import net.montoyo.wd.utilities.data.BlockSide;
@@ -99,10 +100,10 @@ public class ScreenCursorTracker {
 
                 double cx, cy, cz;
                 switch (data.side) {
-                    case NORTH -> { cx = bx + w / 2; cy = by + h / 2; cz = bz; }
+                    case NORTH -> { cx = bx + 1 - w / 2; cy = by + h / 2; cz = bz; }
                     case SOUTH -> { cx = bx + w / 2; cy = by + h / 2; cz = bz + 1; }
                     case WEST ->  { cx = bx; cy = by + h / 2; cz = bz + w / 2; }
-                    case EAST ->  { cx = bx + 1; cy = by + h / 2; cz = bz + w / 2; }
+                    case EAST ->  { cx = bx + 1; cy = by + h / 2; cz = bz + 1 - w / 2; }
                     case BOTTOM ->{ cx = bx + w / 2; cy = by; cz = bz + h / 2; }
                     case TOP ->   { cx = bx + w / 2; cy = by + 1; cz = bz + h / 2; }
                     default -> { cx = bx; cy = by; cz = bz; }
@@ -183,12 +184,11 @@ public class ScreenCursorTracker {
         if (isDown && !leftButtonPressed) {
             // Mouse button just pressed down
             leftButtonPressed = true;
-            // Give the browser focus so text fields under the click accept typing.
-            MCEFHelper.setFocus(currentCursor.screenData.browser, true);
             long now = System.currentTimeMillis();
             int clickCount = (now - currentCursor.screenData.lastClickTime < 500) ? 2 : 1;
             currentCursor.screenData.lastClickTime = now;
-            MCEFHelper.sendMouseClick(currentCursor.screenData.browser, currentCursor.pixelX, currentCursor.pixelY, 0, false, clickCount);
+            ClientInputHandler.send(ScreenInputPayload.mouseDown(currentCursor.pos,
+                    currentCursor.side.id, currentCursor.pixelX, currentCursor.pixelY, 0, clickCount));
         } else if (!isDown && leftButtonPressed) {
             // Mouse button just released
             releaseLeftButton();
@@ -199,7 +199,8 @@ public class ScreenCursorTracker {
 
     private static void releaseLeftButton() {
         if (leftButtonPressed && currentCursor != null && currentCursor.screenData != null) {
-            MCEFHelper.sendMouseClick(currentCursor.screenData.browser, currentCursor.pixelX, currentCursor.pixelY, 0, true, 1);
+            ClientInputHandler.send(ScreenInputPayload.mouseUp(currentCursor.pos,
+                    currentCursor.side.id, currentCursor.pixelX, currentCursor.pixelY, 0));
         }
         leftButtonPressed = false;
     }
@@ -211,7 +212,8 @@ public class ScreenCursorTracker {
         if (mc.player == null) return;
 
         if (mc.player.isShiftKeyDown()) {
-            MCEFHelper.sendMouseWheel(currentCursor.screenData.browser, currentCursor.pixelX, currentCursor.pixelY, -delta * 4, 0);
+            ClientInputHandler.send(ScreenInputPayload.scroll(currentCursor.pos,
+                    currentCursor.side.id, currentCursor.pixelX, currentCursor.pixelY, -delta * 4));
         } else if (mc.hasControlDown()) {
             // Ctrl + scroll: zoom browser page
             ScreenData data = currentCursor.screenData;

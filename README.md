@@ -62,13 +62,19 @@ All of them are in the **Web Displays** creative tab, or via command:
 Works on a dedicated server. Install the mod on the server and on every client; the server does
 **not** need MCEF (it is client-only), but each player does, or their screens stay blank.
 
-What the server owns and syncs to everyone: the screens on a block, their size, rotation, URL and
-volume. Change the URL and every player's screen navigates.
+Screens are shared sessions. The server owns the screen's size, rotation, URL and volume, and it
+also relays **clicks, scrolling and typing** to everyone watching the block. Click a link and the
+page turns for all of you; type in a search box and everyone sees the letters appear.
 
-What it does not sync: **clicks, scrolling and typing are local to each player.** Every client runs
-its own independent browser at that URL, with its own cookies, logins and playback position. If you
-click play on a video, other players do not see it start — they each see their own copy of the page.
-Two people cannot collaborate in the same page the way they could on one real monitor.
+Input is applied only when it comes back from the server, sender included, so every browser
+receives the same events in the same order rather than the person interacting running ahead. Mouse
+*movement* stays local, so you each keep your own cursor and hover — a click carries its own
+coordinates and lands in the right place on every client regardless of where anyone is pointing.
+
+The one thing this cannot make identical is anything the page decides for itself. Each client still
+runs its own Chromium with its own cookies and logins, so per-account content differs, and a video
+plays from each viewer's own buffer — expect playback to drift by a second or two rather than being
+frame-locked.
 
 Worth knowing before putting this on a public server:
 

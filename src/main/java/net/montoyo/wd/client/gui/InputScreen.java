@@ -12,7 +12,9 @@ import net.minecraft.network.chat.Component;
 import net.montoyo.wd.client.ScreenCursorTracker;
 import net.montoyo.wd.client.mcef.MCEFHelper;
 import net.montoyo.wd.entity.ScreenBlockEntity;
+import net.montoyo.wd.client.ClientInputHandler;
 import net.montoyo.wd.entity.ScreenData;
+import net.montoyo.wd.network.ScreenInputPayload;
 import net.montoyo.wd.utilities.data.BlockSide;
 
 public class InputScreen extends Screen {
@@ -28,56 +30,30 @@ public class InputScreen extends Screen {
     }
 
     @Override
-    protected void init() {
-        // CEF discards key events aimed at an unfocused browser, so typing does nothing until
-        // the browser is told it has focus.
-        Object browser = getBrowser();
-        if (browser != null) {
-            MCEFHelper.setFocus(browser, true);
-        }
-    }
-
-    @Override
-    public void removed() {
-        Object browser = getBrowser();
-        if (browser != null) {
-            MCEFHelper.setFocus(browser, false);
-        }
-        super.removed();
-    }
-
-    @Override
     public boolean keyPressed(KeyEvent event) {
         if (event.key() == InputConstants.KEY_ESCAPE) {
             onClose();
             return true;
         }
-        Object browser = getBrowser();
-        if (browser != null) {
-            MCEFHelper.sendKeyPress(browser, event.key(), 0, event.modifiers());
-            if (event.key() == InputConstants.KEY_BACKSPACE && inputBuffer.length() > 0) {
-                inputBuffer.setLength(inputBuffer.length() - 1);
-            }
+        ClientInputHandler.send(ScreenInputPayload.keyDown(screenPos, screenSide.id,
+                event.key(), event.modifiers()));
+        if (event.key() == InputConstants.KEY_BACKSPACE && inputBuffer.length() > 0) {
+            inputBuffer.setLength(inputBuffer.length() - 1);
         }
         return true;
     }
 
     @Override
     public boolean keyReleased(KeyEvent event) {
-        Object browser = getBrowser();
-        if (browser != null) {
-            MCEFHelper.sendKeyRelease(browser, event.key(), 0, event.modifiers());
-        }
+        ClientInputHandler.send(ScreenInputPayload.keyUp(screenPos, screenSide.id,
+                event.key(), event.modifiers()));
         return true;
     }
 
     @Override
     public boolean charTyped(CharacterEvent event) {
-        Object browser = getBrowser();
         int codePoint = event.codepoint();
-        if (browser != null) {
-            MCEFHelper.sendKeyEvent(browser, (char) codePoint);
-        }
+        ClientInputHandler.send(ScreenInputPayload.charTyped(screenPos, screenSide.id, codePoint));
         if (codePoint >= 32 && codePoint != 127) {
             inputBuffer.appendCodePoint(codePoint);
         }
@@ -87,11 +63,13 @@ public class InputScreen extends Screen {
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
         ScreenCursorTracker.CursorInfo cursor = ScreenCursorTracker.getCurrentCursor();
-        if (cursor != null && cursor.screenData != null && cursor.screenData.browser != null) {
+        if (cursor != null && cursor.screenData != null) {
             int clickCount = doubled ? 2 : 1;
             cursor.screenData.lastClickTime = System.currentTimeMillis();
-            MCEFHelper.sendMouseClick(cursor.screenData.browser, cursor.pixelX, cursor.pixelY, event.button(), false, clickCount);
-            MCEFHelper.sendMouseClick(cursor.screenData.browser, cursor.pixelX, cursor.pixelY, event.button(), true, clickCount);
+            ClientInputHandler.send(ScreenInputPayload.mouseDown(cursor.pos, cursor.side.id,
+                    cursor.pixelX, cursor.pixelY, event.button(), clickCount));
+            ClientInputHandler.send(ScreenInputPayload.mouseUp(cursor.pos, cursor.side.id,
+                    cursor.pixelX, cursor.pixelY, event.button()));
         }
         return true;
     }

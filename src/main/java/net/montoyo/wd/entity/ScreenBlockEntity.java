@@ -209,7 +209,8 @@ public class ScreenBlockEntity extends BlockEntity {
         double u, v;
         switch (screen.side) {
             case NORTH -> {
-                u = 1.0 - localX / w;
+                // Grows toward -x, so the screen spans localX in [1 - w, 1].
+                u = (1.0 - localX) / w;
                 v = 1.0 - localY / h;
             }
             case SOUTH -> {
@@ -221,7 +222,8 @@ public class ScreenBlockEntity extends BlockEntity {
                 v = 1.0 - localY / h;
             }
             case EAST -> {
-                u = 1.0 - localZ / w;
+                // Grows toward -z, so the screen spans localZ in [1 - w, 1].
+                u = (1.0 - localZ) / w;
                 v = 1.0 - localY / h;
             }
             case BOTTOM -> {
@@ -318,6 +320,9 @@ public class ScreenBlockEntity extends BlockEntity {
                         Log.info("Created browser for screen at {} side {}", worldPosition, screen.side);
                         injectScripts(screen.browser);
                         MCEFHelper.setBrowserVolume(screen.browser, screen.volume);
+                        // Focused once, for good: CEF drops key events aimed at an unfocused
+                        // browser, and toggling focus per click swallowed the click itself.
+                        MCEFHelper.setFocus(screen.browser, true);
                     }
                 }
             }
@@ -349,6 +354,7 @@ public class ScreenBlockEntity extends BlockEntity {
                     Log.info("Created browser for screen at {} side {}", worldPosition, screen.side);
                     injectScripts(screen.browser);
                     MCEFHelper.setBrowserVolume(screen.browser, screen.volume);
+                    MCEFHelper.setFocus(screen.browser, true);
                     created = true;
                 }
             }

@@ -96,6 +96,14 @@ public class ScreenRenderer implements BlockEntityRenderer<ScreenBlockEntity, Sc
 
         poseStack.pushPose();
         translateToSurface(poseStack, face.side);
+        // North and east faces are drawn along +x / +z, which is the viewer's left for those
+        // two. Shifting the quad back by its width makes every face grow to the viewer's
+        // right instead, so placement behaves the same whichever way you are looking.
+        switch (face.side) {
+            case NORTH -> poseStack.translate(1.0f - face.width, 0.0f, 0.0f);
+            case EAST -> poseStack.translate(0.0f, 0.0f, 1.0f - face.width);
+            default -> { }
+        }
 
         collector.submitCustomGeometry(poseStack, RenderTypes.entityCutout(face.texture),
                 (pose, consumer) -> writeQuad(pose, consumer, face, uv));

@@ -39,6 +39,8 @@ public class ClientInit implements ClientModInitializer {
         net.minecraft.client.renderer.blockentity.BlockEntityRenderers.register(
                 WDRegistries.SCREEN_BLOCK_ENTITY, ScreenRenderer::new);
 
+        ClientInputHandler.register();
+
         // Schedule MCEF initialization callback (uses reflection)
         MCEFHelper.scheduleInit(success -> {
             if (success) {

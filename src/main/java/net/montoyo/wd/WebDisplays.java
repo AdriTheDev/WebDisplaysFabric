@@ -9,6 +9,7 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.server.MinecraftServer;
 import net.montoyo.wd.command.ScreenCommand;
 import net.montoyo.wd.network.ScreenActionPayload;
+import net.montoyo.wd.network.ScreenInputPayload;
 import net.montoyo.wd.network.ServerNetHandler;
 import net.montoyo.wd.registry.WDRegistries;
 import net.montoyo.wd.utilities.Log;
@@ -48,6 +49,8 @@ public class WebDisplays implements ModInitializer {
 
         // Register network payload types (play phase)
         PayloadTypeRegistry.serverboundPlay().register(ScreenActionPayload.TYPE, ScreenActionPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ScreenInputPayload.TYPE, ScreenInputPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(ScreenInputPayload.TYPE, ScreenInputPayload.CODEC);
 
         // Register server-side network handlers
         ServerNetHandler.register();

@@ -6,11 +6,11 @@ import org.joml.Vector3f;
 
 public enum BlockSide {
     BOTTOM(0, Direction.DOWN,  new Vector3d(0, -1, 0),  new Vector3d(1, 0, 0),  new Vector3d(0, 0, 1)),
-    TOP(1,    Direction.UP,    new Vector3d(0, 1, 0),   new Vector3d(1, 0, 0),  new Vector3d(0, 0, -1)),
+    TOP(1,    Direction.UP,    new Vector3d(0, 1, 0),   new Vector3d(1, 0, 0),  new Vector3d(0, 0, 1)),
     NORTH(2,  Direction.NORTH, new Vector3d(0, 0, -1),  new Vector3d(-1, 0, 0), new Vector3d(0, 1, 0)),
     SOUTH(3,  Direction.SOUTH, new Vector3d(0, 0, 1),   new Vector3d(1, 0, 0),  new Vector3d(0, 1, 0)),
-    WEST(4,   Direction.WEST,  new Vector3d(-1, 0, 0),  new Vector3d(0, 0, -1), new Vector3d(0, 1, 0)),
-    EAST(5,   Direction.EAST,  new Vector3d(1, 0, 0),   new Vector3d(0, 0, 1),  new Vector3d(0, 1, 0));
+    WEST(4,   Direction.WEST,  new Vector3d(-1, 0, 0),  new Vector3d(0, 0, 1),  new Vector3d(0, 1, 0)),
+    EAST(5,   Direction.EAST,  new Vector3d(1, 0, 0),   new Vector3d(0, 0, -1), new Vector3d(0, 1, 0));
 
     public final int id;
     public final Direction direction;
