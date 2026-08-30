@@ -163,12 +163,20 @@ public class ScreenBlockEntity extends BlockEntity {
     public void setScreenURL(BlockSide side, String url) {
         ScreenData screen = getScreen(side);
         if (screen == null) return;
-        screen.url = WebDisplays.applyBlacklist(url);
+        String resolved = WebDisplays.applyBlacklist(url);
+        boolean changed = !resolved.equals(screen.url);
+        screen.url = resolved;
+        // Still reload locally even when unchanged: re-entering the same address in the
+        // configurator is how you refresh a page.
         if (level != null && level.isClientSide() && screen.browser != null) {
             MCEFHelper.loadBrowserUrl(screen.browser, screen.url);
         }
         setChanged();
-        if (level != null && !level.isClientSide()) {
+        // Every client reports where its own page has drifted to, so several of them can name
+        // the same address within the same second. Broadcasting each report would turn one
+        // navigation into a block entity update per player watching; only a real change is
+        // worth telling anyone about.
+        if (level != null && !level.isClientSide() && changed) {
             level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
         }
     }
@@ -590,7 +598,11 @@ public class ScreenBlockEntity extends BlockEntity {
                 if (old.volume != volume) {
                     MCEFHelper.setBrowserVolume(screen.browser, volume);
                 }
-                if (url != null && !url.equals(old.url)) {
+                // lastUrl is where this browser actually is, which is not always what the
+                // screen was last told. The client whose page moved is the one that reported
+                // the new address, so the update it gets back names the page it is already on;
+                // reloading there would throw away the page it just navigated to.
+                if (url != null && !url.equals(old.url) && !url.equals(old.lastUrl)) {
                     try {
                         MCEFHelper.loadBrowserUrl(screen.browser, url(url));
                     } catch (IOException e) {

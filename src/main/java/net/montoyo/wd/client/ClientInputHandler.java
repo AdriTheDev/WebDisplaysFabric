@@ -8,6 +8,7 @@ import net.montoyo.wd.client.mcef.MCEFHelper;
 import net.montoyo.wd.entity.ScreenBlockEntity;
 import net.montoyo.wd.entity.ScreenData;
 import net.montoyo.wd.network.ScreenInputPayload;
+import net.montoyo.wd.utilities.Log;
 import net.montoyo.wd.utilities.data.BlockSide;
 
 import java.util.Collections;
@@ -43,7 +44,10 @@ public final class ClientInputHandler {
 
     private static void apply(ScreenInputPayload payload) {
         Object browser = browserAt(payload.pos(), payload.side());
-        if (browser == null) return;
+        if (browser == null) {
+            noteUndeliverable(payload);
+            return;
+        }
 
         switch (payload.kind()) {
             case ScreenInputPayload.KIND_MOUSE_DOWN -> {
@@ -83,6 +87,24 @@ public final class ClientInputHandler {
             default -> { }
         }
     }
+
+    /**
+     * Reports relayed input this client had nowhere to put.
+     *
+     * <p>Silence here is indistinguishable from the packet never arriving, which is the hard
+     * part of diagnosing a screen that works for one player and not another. Throttled, because
+     * held keys and drags would otherwise fill the log.
+     */
+    private static void noteUndeliverable(ScreenInputPayload payload) {
+        long now = System.currentTimeMillis();
+        if (now - lastUndeliverableWarning < UNDELIVERABLE_WARNING_INTERVAL_MS) return;
+        lastUndeliverableWarning = now;
+        Log.warning("Screen input for {} side {} arrived with no browser to apply it to",
+                payload.pos(), payload.side());
+    }
+
+    private static long lastUndeliverableWarning = 0;
+    private static final long UNDELIVERABLE_WARNING_INTERVAL_MS = 5000;
 
     /** The character CEF expects alongside an editing key, or 0 for keys that need none. */
     private static char controlCharFor(int glfwKey) {

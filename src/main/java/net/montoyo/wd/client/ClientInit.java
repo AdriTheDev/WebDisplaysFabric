@@ -2,6 +2,7 @@ package net.montoyo.wd.client;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
@@ -13,6 +14,7 @@ import net.montoyo.wd.client.mcef.MCEFHelper;
 import net.montoyo.wd.entity.KeyboardBlockEntity;
 import net.montoyo.wd.entity.ScreenBlockEntity;
 import net.montoyo.wd.entity.ScreenData;
+import net.montoyo.wd.network.ScreenActionPayload;
 import net.montoyo.wd.registry.WDRegistries;
 import net.montoyo.wd.utilities.Log;
 import net.montoyo.wd.utilities.data.BlockSide;
@@ -26,6 +28,28 @@ public class ClientInit implements ClientModInitializer {
     private static final long URL_CHECK_INTERVAL_MS = 1000;
     private static boolean mcefRenderingEnabled = true;
     private static boolean wasF6Down = false;
+
+    /**
+     * Tells the server where a screen's page has actually got to, so the other clients follow.
+     *
+     * <p>Relaying clicks and keystrokes is not enough to keep pages together. Every client runs
+     * its own Chromium with its own cookies, logins, consent prompts and load timing, so the
+     * same click can land on a different page state on each of them and produce nothing. What
+     * does travel reliably is the address: whichever client's page moved, everyone else is told
+     * to go there, and a search or a followed link ends up on all the screens.
+     *
+     * <p>Only reported on an actual change of address, and only when it differs from what the
+     * server already believes, so a client told to load a page does not immediately report it
+     * straight back. Restricted to ordinary web addresses to stop a client that failed to load
+     * something from dragging everyone onto its own error page.
+     */
+    private static void reportNavigation(ScreenBlockEntity screen, ScreenData data, String currentUrl) {
+        if (currentUrl.equals(data.url)) return;
+        if (!currentUrl.startsWith("http://") && !currentUrl.startsWith("https://")) return;
+        if (!ClientPlayNetworking.canSend(ScreenActionPayload.TYPE)) return;
+        ClientPlayNetworking.send(new ScreenActionPayload(screen.getBlockPos(), data.side.id,
+                ScreenActionPayload.ACTION_SET_URL, currentUrl));
+    }
 
     public static boolean isMCEFRenderingEnabled() {
         return mcefRenderingEnabled;
@@ -74,6 +98,7 @@ public class ClientInit implements ClientModInitializer {
                             // A new page starts at full volume with none of our scripts, so
                             // restore the screen's setting alongside the window.open override.
                             MCEFHelper.setBrowserVolume(data.browser, data.volume);
+                            reportNavigation(screen, data, currentUrl);
                         }
                     }
                 }
