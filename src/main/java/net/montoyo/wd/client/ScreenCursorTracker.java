@@ -24,14 +24,8 @@ public class ScreenCursorTracker {
 
     private static CursorInfo currentCursor = null;
     private static long lastMoveTime = 0;
-    private static boolean wasAttackDown = false;
     private static boolean cursorVisible = true;
     private static boolean leftButtonPressed = false;
-    private static long lastRaycastTime = 0;
-    private static final long RAYCAST_INTERVAL_MS = 50; // 20 ticks/sec → reduce to ~20/sec effectively, but skip redundant calculations
-    private static int lastPlayerChunkX = Integer.MIN_VALUE, lastPlayerChunkZ = Integer.MIN_VALUE;
-    private static int playerLookDirty = 0;
-    private static double lastYaw = Double.NaN, lastPitch = Double.NaN;
 
     public static boolean isCursorVisible() {
         return cursorVisible;
@@ -61,21 +55,12 @@ public class ScreenCursorTracker {
             return;
         }
 
-        // Skip raycast if player hasn't rotated (major optimization)
-        float yaw = mc.player.getYRot();
-        float pitch = mc.player.getXRot();
-        if (yaw == lastYaw && pitch == lastPitch) {
-            // Only send mouse move if we have a current cursor (to keep hover state)
-            if (currentCursor != null) {
-                long now = System.currentTimeMillis();
-                if (now - lastMoveTime > 100) {
-                    lastMoveTime = now; // keep alive
-                }
-            }
-            return;
-        }
-        lastYaw = yaw;
-        lastPitch = pitch;
+        // Raycast every tick. This used to be skipped unless the player's rotation changed,
+        // which meant walking around never updated the cursor, and a screen placed while
+        // standing still was never picked up at all - leaving no cursor, clicks falling
+        // through to the block behind, and block breaking un-cancelled. Sending the move to
+        // the browser is still throttled below, so the cost here is a handful of ray-plane
+        // intersections.
 
         Vec3 origin = mc.player.getEyePosition(1.0f);
         Vec3 look = mc.player.getViewVector(1.0f);
@@ -194,7 +179,6 @@ public class ScreenCursorTracker {
             releaseLeftButton();
         }
         
-        wasAttackDown = isDown || mc.player.isSpectator();
     }
 
     private static void releaseLeftButton() {
